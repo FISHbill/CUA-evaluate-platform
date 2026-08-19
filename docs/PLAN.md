@@ -255,7 +255,7 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 3. **失败不是 0 分**：reset 失败、VNC 挂掉、API 429 应记 `invalid` / `infra_error`，与模型失败分开，否则会污染 Table 1。
 4. **并发模型**：瓶颈是 VM 和显示器，不是 Python。按 `num_envs` 和宿主机 RAM/KVM 槽位限流。
 5. **官方数字 vs 内部数字**：默认定位是「内部可复现对比」。若要对齐论文/官方榜，必须逐 bench 核对协议（步数、是否 bash、是否 a11y）。Qwen-CUA 主文是 screenshot-only。
-6. **成本**：全量 8 bench × 4 模型会是大量 API 与 VM 时间。必须支持 `task_ids` 过滤、断点续跑、按 token 预算熔断。
+6. **成本**：全量 8 bench × 4 模型会是大量 API 与 VM 时间。必须支持 `task_ids` 过滤、断点续跑、按 token 预算熔断。计算 / 存储 / 网络分档见 [RESOURCES.md](./RESOURCES.md)。
 
 ---
 
