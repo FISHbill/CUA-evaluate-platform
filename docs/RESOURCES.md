@@ -39,7 +39,7 @@
 
 | 档 | 目标 | 计算 | 存储 | 网络 | 墙钟（数量级） |
 | --- | --- | --- | --- | --- | --- |
-| A. Smoke | OSWorld 1–10 题，`num_envs=1` | 8 vCPU / 32 GB / KVM；模型走 API 则 **0 GPU** | 80–150 GB | 首次拉镜像 20–60 GB | 含下载 1–3 h；纯跑题 10–40 min |
+| A. Smoke | OSWorld 1 题，`num_envs=1` | 8 vCPU / 32 GB / KVM；无卡用 dummy，有 4090 再本地推理 | **根盘 ≥ 150 GB**（有效占用约 80 GB） | 首次下行约 15–25 GB | 含下载 1–3 h；纯跑题数十分钟 |
 | B. 单 bench 全量 | OSWorld-Verified 360 题，`num_envs=8` | 上表 32–48 vCPU / 96 GB | 冷数据 100 GB + 一次 run 轨迹 5–30 GB | 评测期上行 10–40 GB 到模型 API | 约 **3–8 h**（官方称 AWS 高并行可压到 ~1 h） |
 | C. Table 1 一个模型 | 8 个 bench 全量 | Linux 池 16–64 路 VM + 一台 WebArena 胖节点；Mac 另算 | 冷镜像 **0.5–2 TB**；一次 run 轨迹 **50–300 GB**（只存 JPEG）/ **0.5–2 TB**（再存录屏） | 首次下行 0.3–1 TB；评测期上行 **0.2–1 TB** 图像到 API | **数天到两周**，卡在 OSWorld 2.0 与 Mac |
 | D. Table 1 四个模型 | C × 4 | 同 C，或串行复用池 | 轨迹 ×4 | API 流量 ×4 | 按机器池线性增加 |
@@ -151,10 +151,9 @@ Linux 上先接通 OSWorld + WebArena + ScienceBoard：**冷存储按 1 TB 规�
    推理服务应尽量和 VM 池同城 / 专线，避免每张图跨洋。
 
 3. **环境出网**  
-   - WebArena / OSWorld 2.0 mock 站：应走内网，不要打真实互联网。  
-   - 部分 OSWorld 网页题需要代理（官方 `proxy: true`）。  
-   - RedTeamCUA：**默认禁止随意出网**，只连通沙箱站点。  
-   - 模型 API 出网与环境出网应分流（不同安全组），避免 agent 从桌面 VM 直接打到公司密钥。
+   - 当前确认：**测试评测环境可以出网**。  
+   - 以后按 bench 收紧：WebArena / OSWorld 2.0 mock 站仍建议走内网；RedTeamCUA 再单独隔离。  
+   - 模型 API 密钥仍不要放进桌面 VM。
 
 控制面端口：VNC/noVNC、OSWorld server（常见 5000/8006）、WebArena 多站点端口。并发 Docker 时按官方做端口池，不要所有 VM 抢同一端口。
 
