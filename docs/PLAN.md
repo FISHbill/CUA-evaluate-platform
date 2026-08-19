@@ -2,7 +2,7 @@
 
 本文档是 CUA（Computer-Use Agent）评测平台的第一版方案：目标是在 Linux 上搭建一套可复现的实验基础设施，用来比较 **模型 + harness** 在多个公开 bench 上的表现。目标产出形态对齐 Qwen-CUA 论文 Table 1：按模型列、按 bench 行、支持单指标和双指标（binary / partial、task success / ASR）。
 
-当前仓库为空，本文件只定方向与边界，不开始实现。实现前必须先确认文末「待确认需求」。
+范围与约束以 [REQUIREMENTS.md](./REQUIREMENTS.md) 为准（2026-08-19 已确认）。第 7 节仅保留仍待补充的项（各 bench 安全语义、云主机/4090 具体规格）。
 
 ---
 
@@ -63,13 +63,13 @@ Agent = Model + Harness + Action/Observation Protocol
 | 包与环境 | **uv + 锁文件** | 比 conda 更适合仓库级可复现安装 |
 | 配置 | **Pydantic v2 + YAML** | 实验配置要校验：模型、协议、步数、随机种子 |
 | CLI | **Typer** | `cua-eval run/status/report` 一条命令可脚本化、可 CI |
-| 控制面 API | **FastAPI** | 提交 job、查进度、拉 Table 1；本地方便，以后也好接前端 |
+| 控制面 API | 本阶段不做；预留进程内 Orchestrator 接口 | 确认仅 CLI。以后若加 HTTP，再挂 FastAPI |
 | 任务队列（MVP 可不上） | 先进程内并行；规模上来用 **Redis + arq/Celery** 或 **K8s Job** | CUA 任务是小时级、有状态 VM，不适合短任务队列思维 |
-| 元数据 | **PostgreSQL**（开发可用 SQLite） | run / trial / metric / artifact 需要查询和去重 |
-| 轨迹与截图 | **对象存储（MinIO / S3）** | 单条 OSWorld 2.0 轨迹截图可达 GB 级 |
+| 元数据 | 本阶段 **SQLite + 本地 JSON**；以后可换 PostgreSQL | 单机跑通不需要独立数据库 |
+| 轨迹与截图 | 本地 `results/`；保留天数可配 | 以后再接 MinIO/S3 |
 | 桌面环境 | **Docker + QEMU/KVM**（沿用各 bench 官方 image） | 不要自研第二套 DesktopEnv |
 | Web 环境 | **Docker Compose**（WebArena / mock sites） | 与官方部署对齐 |
-| 前端（可后置） | MVP 用 CLI + Markdown/HTML 报表；需要 UI 时再 **React + Vite** | 先把分数跑通，再做看板 |
+| 前端 | **不做** | 已确认仅 CLI |
 | 可观测 | 结构化 JSON log + **OpenTelemetry 可选** | 必须能回答：卡在 reset / model / eval 哪一步 |
 
 明确不建议作为主语言：TypeScript 全栈、Java、纯 Bash。它们可以出现在前端或运维脚本里，但不该承载评测循环。
@@ -307,24 +307,28 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 ---
 
-## 8. 建议的默认假设（若短期无法逐条确认）
+## 8. 已确认的默认值
 
-在你回复前，实现侧若必须开工，将采用这些可撤销默认值：
+详见 [REQUIREMENTS.md](./REQUIREMENTS.md)。摘要：
 
-| 项 | 默认 |
+| 项 | 确认值 |
 | --- | --- |
-| 第一期范围 | 阶段 0 骨架 + OSWorld-Verified smoke（1–10 题） |
-| 协议 | screenshot-only native CUA；bash 作为显式实验 flag |
-| 用户界面 | CLI + Markdown Table 1 |
-| 存储 | 本地目录；schema 预留 S3 |
-| Mac / Windows | 接口预留，第一期不跑 |
-| 成功标准 | 内部可复现，不承诺 bit-exact 复现论文表 |
-| 并发 | 单机 `num_envs=1`，配置里可加大 |
+| 第一期范围 | 阶段 0 骨架 + OSWorld-Verified **1 题** smoke |
+| 协议 | 仅 screenshot + 键鼠；不接厂商 CUA API；不要 Bash |
+| 用户界面 | 仅 CLI |
+| 模型调用 | OpenAI 兼容 HTTP（dummy / 本机 4090 / 云端），便于以后接计算卡集群 |
+| 存储 | 本地目录；`artifact_retention_days` 可配 |
+| Mac / Windows | 接口预留，不跑 |
+| 成功标准 | 内部跑通与可复现对比，不对齐论文分数 |
+| 并发 | 单机 `num_envs=1` |
+| 出网 | 允许 |
+
+仍待补充：各 bench 安全语义、租赁云主机与 4090 的具体规格。
 
 ---
 
 ## 9. 下一步
 
-1. 你确认第 7 节中的范围、模型端点、是否要 Mac、成功标准。
-2. 按阶段 0 落地 schema / CLI / fake adapter / Table 1 渲染。
-3. 再接 OSWorld-Verified Docker smoke，用真实官方 evaluator 打通一条链路。
+1. 阶段 0：schema、CLI、fake adapter、Table 1 文本报表、产物保留期配置。
+2. 阶段 1：OSWorld-Verified Docker 单任务 smoke（真实截图 + 键鼠 + 官方 evaluator）。
+3. 模型后端先做 dummy 与 OpenAI 兼容客户端；有 4090 后再接本地 vLLM。

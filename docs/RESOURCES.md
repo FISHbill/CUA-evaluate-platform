@@ -160,22 +160,49 @@ Linux 上先接通 OSWorld + WebArena + ScienceBoard：**冷存储按 1 TB 规�
 
 ---
 
-## 6. 第一期（阶段 0–1）最低建议
+## 6. 测试阶段磁盘：最小需求（OSWorld smoke）
 
-只做 **OSWorld-Verified smoke（1–10 题）+ 模型 API**：
+当前确认只跑通 **OSWorld-Verified 1 题**，不要按 8 个 bench 的镜像总和买盘。官方 Ubuntu 盘压缩包（Hugging Face `xlangai/ubuntu_osworld` 的 `Ubuntu.qcow2.zip`）约 **11.4 GB**。
 
-- 1 台 Linux：8 vCPU、32 GB RAM、**KVM**、256 GB SSD
-- 无本地 GPU
-- 出网：能拉 Docker/HF 镜像；评测时到模型 API **≥50 Mbps**
-- 磁盘：镜像 80 GB + 结果 20 GB
+| 用途 | 大约占用 | 说明 |
+| --- | --- | --- |
+| 系统与 Docker 本身 | 15–25 GB | 云主机镜像常已占一部分根盘 |
+| `happysixd/osworld-docker` | 2–5 GB | QEMU/KVM 包装容器 |
+| `Ubuntu.qcow2.zip` 下载 | 11.4 GB | 解压后可删 zip |
+| 解压后 `Ubuntu.qcow2` | 约 12–20 GB | 稀疏文件；Docker 里 `DISK_SIZE=64G` 是虚拟容量，不是立刻占满 64 GB |
+| 运行时 overlay / 日志 | 10–20 GB | 跑题时 qcow2 会涨 |
+| OSWorld 代码与 Python 依赖 | 2–5 GB | |
+| 1 题轨迹（JPEG，短跑） | <1 GB | 保留天数由配置控制 |
+| **合计建议空闲空间** | **≥ 80 GB** | 解压期间 zip+qcow2 会短暂共存，不要只留 40 GB |
+| **云主机根盘建议** | **≥ 150 GB** | 含操作系统；很多默认 40–80 GB 盘会在拉镜像时写满 |
 
-要跑 **OSWorld-Verified 全量（内部对比，非论文复现）**：
+没有 GPU 时，上述数字不变（环境侧不吃显存）。有一张 4090 时，另加模型权重盘：7B–32B 量化权重大约 **15–70 GB**，建议根盘或数据盘 **200 GB** 更从容。
 
-- 1 台 32+ vCPU / 96 GB / 1 TB SSD / KVM，`num_envs=8`
-- 或 AWS：控制面 t3.large + 8 个客户端 VM
-- 对象存储稍后可加；先本地 `results/` 也行
+各 bench 冷镜像对照（**本阶段不要一次下完**）：
 
-不要在第一期按 Table 1 八 bench 买机器。OSWorld 2.0、WebArena 1 TB 盘、Mac mini 池应作为独立扩容项。
+| Bench | 冷数据量级 | 测试阶段 |
+| --- | --- | --- |
+| OSWorld-Verified | ~15–40 GB 有效占用 | **现在就要** |
+| OSWorld 2.0 | 另加任务 assets | 以后 |
+| WebArena | 下载约 180 GB，盘按 1 TB | 以后 |
+| ScienceBoard | 宿主机预留 >100 GB | 以后 |
+| MyPCBench | 与 OSWorld 同量级或更大 | 以后 |
+| Gym-Anything 全量 | TB 级 | 以后，必须先锁子集 |
+| Mac / Windows | 另机 | 接口预留 |
+
+轨迹保留：做成 `artifact_retention_days`（建议默认 14，可改）。磁盘规划按「冷镜像 + 保留窗口内的 run 数 × 每 run 体积」，不要按无限历史。
+
+---
+
+## 6.1 机器规格（与磁盘配套）
+
+只做 OSWorld 1 题 smoke：
+
+- 1 台 Linux：8 vCPU、32 GB RAM、**KVM**、**150 GB** 盘
+- GPU：可选。无卡用 dummy；有约 4090 级再起本地 OpenAI 兼容推理
+- 出网：允许（已确认）
+
+OSWorld-Verified 360 题全量仍建议 1 TB 盘与更高并发，那是下一阶段，不是现在的最小需求。
 
 ---
 
