@@ -62,10 +62,10 @@ Agent = Model + Harness + Action/Observation Protocol
 | 平台核心、adapter、agent 协议 | **Python 3.11+** | 上述 bench 官方 runner 几乎全是 Python；硬换成 Go/Rust 只会多一层 FFI |
 | 包与环境 | **uv + 锁文件** | 比 conda 更适合仓库级可复现安装 |
 | 配置 | **Pydantic v2 + YAML** | 实验配置要校验：模型、协议、步数、随机种子 |
-| CLI | **Typer** | `cua-eval run/status/report` 一条命令可脚本化、可 CI |
+| CLI | **Typer** | `cua-eval doctor/run/report/prune` 一条命令可脚本化、可 CI |
 | 控制面 API | 本阶段不做；预留进程内 Orchestrator 接口 | 确认仅 CLI。以后若加 HTTP，再挂 FastAPI |
 | 任务队列（MVP 可不上） | 先进程内并行；规模上来用 **Redis + arq/Celery** 或 **K8s Job** | CUA 任务是小时级、有状态 VM，不适合短任务队列思维 |
-| 元数据 | 本阶段 **SQLite + 本地 JSON**；以后可换 PostgreSQL | 单机跑通不需要独立数据库 |
+| 元数据 | 本阶段 **只用本地 JSON 文件**，不上数据库；以后规模上来再评估 | 单机单题不需要 SQLite，已确认 |
 | 轨迹与截图 | 本地 `results/`；保留天数可配 | 以后再接 MinIO/S3 |
 | 桌面环境 | **Docker + QEMU/KVM**（沿用各 bench 官方 image） | 不要自研第二套 DesktopEnv |
 | Web 环境 | **Docker Compose**（WebArena / mock sites） | 与官方部署对齐 |
@@ -104,11 +104,11 @@ Agent = Model + Harness + Action/Observation Protocol
 
 ```text
                     ┌─────────────────────────────────────┐
-                    │  experiment.yaml  /  REST 提交      │
+                    │  experiment.yaml（仅 CLI 提交）     │
                     └─────────────────┬───────────────────┘
                                       │
                     ┌─────────────────▼───────────────────┐
-                    │  Control Plane                      │
+                    │  Orchestrator（进程内，非 HTTP 服务）│
                     │  校验配置 · 配额 · 并发槽 · 重试    │
                     └───────┬───────────────────┬─────────┘
            ┌────────────────▼────┐     ┌────────▼─────────┐
@@ -138,12 +138,12 @@ Agent = Model + Harness + Action/Observation Protocol
 
 **1. AgentSpec**
 
-- `model`: 名称、endpoint、温度、max tokens、thinking 开关
-- `harness`: 例如 `native-cua`、`native-cua+bash`、`openai-computer`、`anthropic-computer`、`openclaw`、`agent-s3`
-- `protocol`: observation（默认 screenshot-only）、action space、是否允许 DOM/a11y/shell
-- `limits`: `max_steps` / `max_turns` / wall-clock timeout
+- `model`: `backend`（`dummy` / `openai_compat`）、`endpoint_kind`（`api` / `local`）、名称、温度、max tokens、thinking 开关
+- `harness`: 本阶段枚举 `stub` / `deepseek_harness`；以后可扩 `openai_computer`、`anthropic_computer`、`openclaw`、`agent_s3`（标识符统一 snake_case）
+- `protocol`: `observation` / `guest_actions` / `harness_bash` 三个独立开关，取值见 [REQUIREMENTS.md](./REQUIREMENTS.md) 第 6.3 节
+- `limits`: `max_steps`（默认 50）/ `max_turns` / wall-clock timeout
 
-Qwen-CUA 论文的主设定是 **只看截图、只键鼠**。平台必须能强制这个协议，也必须能跑「GUI+Bash」消融（MyPCBench 已有对照）。
+Qwen-CUA 论文的主设定是 **只看截图、只键鼠**。平台必须能强制这个协议，也必须能跑「GUI+Bash」消融（MyPCBench 已有对照）。注意本项目的「禁 bash」指禁止绕过图形界面调软件 API，agent 在桌面 VM 里开终端打字仍属合法键鼠操作。
 
 **2. BenchAdapter**
 
@@ -209,11 +209,11 @@ cua-eval/
 - Table 1 渲染（含双指标、ASR 越低越好的标注）
 - 结果目录约定：`results/<run_id>/<bench>/<model>/<task_id>/`
 
-### 阶段 1 — MVP：OSWorld-Verified 子集
+### 阶段 1 — MVP：OSWorld-Verified 单题
 
-- Adapter 包装官方 OSWorld Docker provider
-- 一个 native CUA harness（screenshot → 模型 → click/type/scroll）
-- 先跑 1 个 smoke 任务，再跑一个小 split（例如 10 题）
+- Adapter 包装官方 OSWorld Docker provider，commit pin ≥ `091f5ef`
+- Harness 用 **DeepSeek Harness**（screenshot → Qwen 小 VLM → click/type/scroll），自备 cordis.yml 去掉上游默认的 bash
+- **只跑 1 题**（`5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57`），`num_envs=1`，`max_steps=50`。小 split（例如 10 题）属于阶段 2
 - 记录：分数、步数、token、失败类别（env reset / model / evaluator）
 
 选它做 MVP 的原因：Linux 原生、文档成熟、和 Table 1 第一行对齐、社区 harness 最多。
@@ -229,7 +229,7 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 ### 阶段 3 — 协议矩阵与多 harness
 
-- 同一模型 × `{native-cua, native-cua+bash, 厂商 CUA API}`
+- 同一模型 × `{deepseek_harness, deepseek_harness+bash, 厂商 CUA API}`
 - 强制 protocol 字段写入结果，避免把 GUI-only 和 GUI+Bash 写进同一列
 - 成本与步数报表（论文 Figure 6 那类 efficiency，可后做）
 
@@ -252,7 +252,7 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 1. **可复现**：pin bench commit、镜像 digest、任务 json、max_steps、分辨率、是否 headless。换一个 OSWorld 小版本分数就会漂。
 2. **隔离**：一任务一环境；RedTeamCUA 默认无外网。评测机不要用开发者个人账号登录真实网站。
-3. **失败不是 0 分**：reset 失败、VNC 挂掉、API 429 应记 `invalid` / `infra_error`，与模型失败分开，否则会污染 Table 1。
+3. **失败不是 0 分**：reset 失败、VNC 挂掉、API 429 应记 `infra_error`，模型自身异常记 `model_error`，与 `task_fail` 分开，否则会污染 Table 1。失败类枚举以 [AGENT.md](../AGENT.md) 第 4 节为准：`ok` / `task_fail` / `infra_error` / `model_error`。
 4. **并发模型**：瓶颈是 VM 和显示器，不是 Python。按 `num_envs` 和宿主机 RAM/KVM 槽位限流。
 5. **官方数字 vs 内部数字**：默认定位是「内部可复现对比」。若要对齐论文/官方榜，必须逐 bench 核对协议（步数、是否 bash、是否 a11y）。Qwen-CUA 主文是 screenshot-only。
 6. **成本**：全量 8 bench × 4 模型会是大量 API 与 VM 时间。必须支持 `task_ids` 过滤、断点续跑、按 token 预算熔断。计算 / 存储 / 网络分档见 [RESOURCES.md](./RESOURCES.md)。
@@ -265,10 +265,12 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 - 各 bench 的安全语义与网络隔离（尤其 RedTeamCUA）
 - 真实 Qwen+DeepSeek Harness+OSWorld 选哪类执行机（Windows PC / 云单机 / 集群）：用最小验证消耗决定，**不绑定 4090**
-- 具体哪一个 Qwen 小模型 id（YAML 可配）
-- OSWorld 单题 task id 与官方仓库 pin
+- 具体哪一个 Qwen 小模型 id 与端点地址（YAML 可配，两条 route 的形状已定）
+- harness 侧 bash 是否永久禁止（本阶段一律关闭）
 - Gym-Anything 测试子集、MyPCBench 主指标口径
 - 官方 VM 镜像许可证与 gated 账号
+
+已于 2026-08-20 关闭：模型接入路线、api/local 双路线、协议三开关、OSWorld 单题 task id 与 commit pin、存储形态、指标口径、`max_steps`。见 [REQUIREMENTS.md](./REQUIREMENTS.md) 第 6 节。
 
 ---
 
@@ -279,14 +281,15 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 | 项 | 确认值 |
 | --- | --- |
 | 第一期范围 | Cursor VM 做阶段 0（fake+dummy）；真实推理验证 = OSWorld **1 题** + Qwen 小模型 + DeepSeek Harness |
-| 协议 | OSWorld：截图 + 键鼠；dsh 的 bash 不计入本实验 |
+| 协议 | 观测只给截图；桌面动作只给键鼠（guest 内开终端打字合法）；harness bash 关闭 |
 | 用户界面 | 仅 CLI |
-| 模型 | dummy 仅平台自测；真实验证走 OpenAI 兼容接口上的小 Qwen |
+| 模型 | dummy 仅平台自测；真实验证走 OpenAI 兼容接口上的小 Qwen，`api` / `local` 两条 route |
 | 计算后端 | 实现 `local_linux`；预留 `windows_pc` / `cloud_single` / `small_cluster` / `gpu_cluster` |
-| 存储 | 本地目录；`artifact_retention_days` 可配 |
+| 存储 | 本地目录，无数据库；`artifact_retention_days` 默认 14 |
+| 指标 | 阶段 1 只记 OSWorld `success_rate`；逐题 0.0–1.0，聚合用百分数 |
 | Bench 客户机 Mac/Windows | 不跑 |
 | 成功标准 | 内部跑通与可复现对比，不对齐论文分数 |
-| 并发 | `num_envs=1` |
+| 并发与步数 | `num_envs=1`，`max_steps=50` |
 | 出网 | 允许 |
 
 其余延后项见第 7 节，不阻塞编码。

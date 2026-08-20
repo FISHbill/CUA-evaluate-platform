@@ -10,7 +10,7 @@
 | --- | --- |
 | Bench 目标 | Table 1 那 **8 个**（OSWorld-Verified、OSWorld 2.0、MyPCBench、MacAgentBench、Gym-Anything、ScienceBoard、WebArena、RedTeamCUA） |
 | 当前阶段 | 开发在 **Cursor VM**。分两层「最小」：平台骨架用 fake；**真实 CUA 推理验证** 用 OSWorld-Verified **1 题** |
-| 最小真实 bench | **是**：在 Table 1 的 5～8 个里，OSWorld-Verified 单任务是资源最低的真实桌面 CUA 闭环 |
+| 最小真实 bench | **是**：在 Table 1 的 8 个里，OSWorld-Verified 单任务是资源最低的真实桌面 CUA 闭环 |
 | 成功标准 | **内部可复现对比**；不追求对齐论文分数。模型可能较小，能跑完循环即可 |
 | 交互 | **仅 CLI**；不做 Web 看板、不做多用户 |
 | 协议 | 对 OSWorld smoke：**截图 + 键鼠**，禁止 a11y / DOM / 软件 API；agent 在桌面 VM 里开终端打字**允许**。详见第 6.3 节 |
