@@ -2,7 +2,7 @@
 
 本文档是 CUA（Computer-Use Agent）评测平台的第一版方案：目标是在 Linux 上搭建一套可复现的实验基础设施，用来比较 **模型 + harness** 在多个公开 bench 上的表现。目标产出形态对齐 Qwen-CUA 论文 Table 1：按模型列、按 bench 行、支持单指标和双指标（binary / partial、task success / ASR）。
 
-范围与约束以 [REQUIREMENTS.md](./REQUIREMENTS.md) 为准（2026-08-19 已确认）。第 7 节仅保留仍待补充的项（各 bench 安全语义、云主机/4090 具体规格）。
+给后续编程 agent 的实现入口是仓库根目录 [AGENT.md](../AGENT.md)。本文第 7 节历史问卷已由 [REQUIREMENTS.md](./REQUIREMENTS.md) 关闭；剩下的是 **不阻塞阶段 0/1** 的延后项。
 
 ---
 
@@ -259,51 +259,15 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 ---
 
-## 7. 待确认需求
+## 7. 延后项（不阻塞阶段 0/1）
 
-下面各项会改变技术选型和第一期范围。没有这些答案时，实现应停在阶段 0 骨架，或只做 OSWorld smoke。
+阶段 0/1 按仓库根目录 [AGENT.md](../AGENT.md) 直接实现。下列项等用到对应 bench 或租 GPU 机时再补：
 
-### 7.1 范围与成功标准
-
-1. 第一期必须跑通哪几个 bench？是否接受「先 OSWorld-Verified smoke，其余只留 adapter 接口」？
-2. 成功标准是「能出内部对比表」，还是「必须复现 Qwen-CUA Table 1 量级数字」？后者对协议、镜像、max_steps 的对齐要求高一个数量级。
-3. 是否需要对外 leaderboard / 多用户 Web，还是团队内部 CLI 即可？
-
-### 7.2 模型与 harness
-
-4. 首批要接哪些模型端点（DashScope / OpenAI / Anthropic / 自托管 vLLM）？密钥如何注入？
-5. 第一期 harness 是否只做 **native screenshot + 键鼠**（对齐 Qwen-CUA 主设定），还是必须同时支持厂商 Computer Use API 和 OpenClaw？
-6. 是否允许 bash / 文件工具？若允许，Table 1 是否拆成两列，避免和 GUI-only 混比？
-7. 自研 harness 的动作空间是否直接复用 OSWorld `pyautogui` 风格，还是要做一层中立 schema 再映射？
-
-### 7.3 基础设施
-
-8. 运行形态：单台 Linux 开发机、内网 GPU/CPU 集群，还是公有云 VM 池？有无 KVM？
-9. 全量并行目标大概多少并发环境（1 / 8 / 64）？这决定要不要上 K8s。
-10. MacAgentBench：是否有 Mac mini / 云 Mac？没有的话第一期是否直接标记不支持？
-11. Gym-Anything 是否包含 Windows / Android，还是只跑 Linux 子集？
-12. 镜像与 gated assets（OSWorld-V2、MyPCBench qcow2、ScienceBoard snapshot）的下载账号与磁盘预算？
-
-### 7.4 评测语义
-
-13. 每个 bench 的 split、`max_steps`、分辨率、headless、随机种子，是否强制与某篇论文 appendix 对齐？请指定论文/commit。
-14. OSWorld 2.0 全量还是先用官方小子集？单任务可达数百步、数小时。
-15. RedTeamCUA 的 ASR 展示规则：总表是否始终 `success / ASR`，排序时 ASR 是否单独成「安全维度」而不是和能力分加权？
-16. MyPCBench 主指标用 perfect-task rate 还是 rubric score？（论文主表与附录口径可能不同。）
-
-### 7.5 数据、安全、合规
-
-17. 轨迹、截图、模型 completion 要存多久？能否含用户 persona 数据（MyPCBench）？
-18. 评测环境能否访问外网？WebArena / mock 站点是自托管还是用作者公共后缀？
-19. RedTeamCUA 是否在隔离集群跑，产物是否需脱敏后才能进共享盘？
-20. 许可证：部分 bench 与 VM 镜像是 gated / 非商用，平台默认开源还是内部仓库？
-
-### 7.6 工程约束
-
-21. 目标用户是研究同学手工跑，还是要进 CI（每次模型发布自动抽测 N 题）？
-22. 语言约束：除 Python 核心外，前端/运维是否有团队偏好（React 或纯 CLI）？
-23. 是否需要与现有实验平台（内部 job 系统、wandb、mlflow）对接？
-24. 预算上限：单次全量 run 的 API + 机器费用能否接受，熔断策略是什么？
+- 各 bench 的安全语义与网络隔离（尤其 RedTeamCUA）
+- 租赁云主机与 4090 的具体 CPU/内存/磁盘规格
+- OSWorld 单题的最终 task id 与官方仓库 pin（实现 adapter 时写入 yaml）
+- Gym-Anything 测试子集、MyPCBench 主指标口径
+- 官方 VM 镜像许可证与 gated 账号
 
 ---
 
@@ -323,12 +287,10 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 | 并发 | 单机 `num_envs=1` |
 | 出网 | 允许 |
 
-仍待补充：各 bench 安全语义、租赁云主机与 4090 的具体规格。
+其余延后项见第 7 节，不阻塞编码。
 
 ---
 
 ## 9. 下一步
 
-1. 阶段 0：schema、CLI、fake adapter、Table 1 文本报表、产物保留期配置。
-2. 阶段 1：OSWorld-Verified Docker 单任务 smoke（真实截图 + 键鼠 + 官方 evaluator）。
-3. 模型后端先做 dummy 与 OpenAI 兼容客户端；有 4090 后再接本地 vLLM。
+按 [AGENT.md](../AGENT.md) 实现阶段 0，再视 Docker/KVM 做 OSWorld 单任务 smoke。
