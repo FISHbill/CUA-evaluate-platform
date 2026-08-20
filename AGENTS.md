@@ -1,4 +1,4 @@
-# AGENT.md — CUA 评测平台开发手册
+# AGENTS.md — CUA 评测平台开发手册
 
 给后续编程 agent 的实现说明书。需求以 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) 为准；架构背景见 [docs/PLAN.md](docs/PLAN.md)。**不要重新讨论技术栈或范围**，按本文开工。
 

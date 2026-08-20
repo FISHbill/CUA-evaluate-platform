@@ -2,7 +2,7 @@
 
 本文档是 CUA（Computer-Use Agent）评测平台的第一版方案：目标是在 Linux 上搭建一套可复现的实验基础设施，用来比较 **模型 + harness** 在多个公开 bench 上的表现。目标产出形态对齐 Qwen-CUA 论文 Table 1：按模型列、按 bench 行、支持单指标和双指标（binary / partial、task success / ASR）。
 
-给后续编程 agent 的实现入口是仓库根目录 [AGENT.md](../AGENT.md)。本文第 7 节历史问卷已由 [REQUIREMENTS.md](./REQUIREMENTS.md) 关闭；剩下的是 **不阻塞阶段 0/1** 的延后项。
+给后续编程 agent 的实现入口是仓库根目录 [AGENTS.md](../AGENTS.md)。本文第 7 节历史问卷已由 [REQUIREMENTS.md](./REQUIREMENTS.md) 关闭；剩下的是 **不阻塞阶段 0/1** 的延后项。
 
 ---
 
@@ -252,7 +252,7 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 1. **可复现**：pin bench commit、镜像 digest、任务 json、max_steps、分辨率、是否 headless。换一个 OSWorld 小版本分数就会漂。
 2. **隔离**：一任务一环境；RedTeamCUA 默认无外网。评测机不要用开发者个人账号登录真实网站。
-3. **失败不是 0 分**：reset 失败、VNC 挂掉、API 429 应记 `infra_error`，模型自身异常记 `model_error`，与 `task_fail` 分开，否则会污染 Table 1。失败类枚举以 [AGENT.md](../AGENT.md) 第 4 节为准：`ok` / `task_fail` / `infra_error` / `model_error`。
+3. **失败不是 0 分**：reset 失败、VNC 挂掉、API 429 应记 `infra_error`，模型自身异常记 `model_error`，与 `task_fail` 分开，否则会污染 Table 1。失败类枚举以 [AGENTS.md](../AGENTS.md) 第 4 节为准：`ok` / `task_fail` / `infra_error` / `model_error`。
 4. **并发模型**：瓶颈是 VM 和显示器，不是 Python。按 `num_envs` 和宿主机 RAM/KVM 槽位限流。
 5. **官方数字 vs 内部数字**：默认定位是「内部可复现对比」。若要对齐论文/官方榜，必须逐 bench 核对协议（步数、是否 bash、是否 a11y）。Qwen-CUA 主文是 screenshot-only。
 6. **成本**：全量 8 bench × 4 模型会是大量 API 与 VM 时间。必须支持 `task_ids` 过滤、断点续跑、按 token 预算熔断。计算 / 存储 / 网络分档见 [RESOURCES.md](./RESOURCES.md)。
@@ -261,7 +261,7 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 ## 7. 延后项（不阻塞阶段 0/1）
 
-阶段 0/1 按仓库根目录 [AGENT.md](../AGENT.md) 直接实现。下列项等用到对应 bench 或租 GPU 机时再补：
+阶段 0/1 按仓库根目录 [AGENTS.md](../AGENTS.md) 直接实现。下列项等用到对应 bench 或租 GPU 机时再补：
 
 - 各 bench 的安全语义与网络隔离（尤其 RedTeamCUA）
 - 真实 Qwen+DeepSeek Harness+OSWorld 选哪类执行机（Windows PC / 云单机 / 集群）：用最小验证消耗决定，**不绑定 4090**
@@ -298,4 +298,4 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 ## 9. 下一步
 
-按 [AGENT.md](../AGENT.md) 在 Cursor VM 实现阶段 0。真实 Qwen + DeepSeek Harness + OSWorld 1 题按最小资源探测后再选执行机。
+按 [AGENTS.md](../AGENTS.md) 在 Cursor VM 实现阶段 0。真实 Qwen + DeepSeek Harness + OSWorld 1 题按最小资源探测后再选执行机。

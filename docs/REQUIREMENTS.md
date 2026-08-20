@@ -37,7 +37,7 @@ Qwen 系列小尺寸多模态模型  +  DeepSeek Harness（dsh）  +  OSWorld 1 
 
 - **模型**：Qwen 小尺寸 VLM（具体 id 写 YAML，如经 OpenAI 兼容接口的 `Qwen2.5-VL-*` / 后续 Qwen-VL）。不要写死某一张卡。
 - **Harness**：`deepseek-harness`（[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)）。平台用 adapter 调它，不把评测循环写成只服务自研 `native-cua`。
-- **注意**：dsh 上游默认组合就挂着 bash（`dsh-bash-local`），而且**没有** computer-use 插件。因此必须自备 cordis.yml 去掉 bash 并自己提供截图/键鼠工具，实现细节见 [AGENT.md](../AGENT.md) 第 6 节。
+- **注意**：dsh 上游默认组合就挂着 bash（`dsh-bash-local`），而且**没有** computer-use 插件。因此必须自备 cordis.yml 去掉 bash 并自己提供截图/键鼠工具，实现细节见 [AGENTS.md](../AGENTS.md) 第 6 节。
 
 Cursor VM 通常无 GPU：阶段 0 只保证 dummy + fake；真实 Qwen+dsh+OSWorld 放到测完最小消耗后再选的机器上跑。
 
@@ -110,7 +110,7 @@ Cursor VM 通常无 GPU：阶段 0 只保证 dummy + fake；真实 Qwen+dsh+OSWo
 
 `endpoint_kind=api`（云端模型 API，前期）与 `endpoint_kind=local`（本地 vLLM / 计算卡集群网关，后续）。两条 route 并列声明在同一份 cordis.yml 里，实验 YAML 选用哪条。具体 Qwen VL 的 model id 与端点地址仍是 YAML 可配字段，不写死。
 
-**待验证**：pi-ai 自建 route 不能声明 input modalities。接 adapter 的第一步必须用一张截图做连通性测试，确认模型真收到了图；不通时退路见 [AGENT.md](../AGENT.md) 第 6.3 节。
+**待验证**：pi-ai 自建 route 不能声明 input modalities。接 adapter 的第一步必须用一张截图做连通性测试，确认模型真收到了图；不通时退路见 [AGENTS.md](../AGENTS.md) 第 6.3 节。
 
 ### 6.3 协议边界（三个独立开关）
 
