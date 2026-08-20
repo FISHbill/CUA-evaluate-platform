@@ -295,4 +295,4 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 ## 9. 下一步
 
-按 [AGENT.md](../AGENT.md) 实现阶段 0，再视 Docker/KVM 做 OSWorld 单任务 smoke。
+按 [AGENT.md](../AGENT.md) 在 Cursor VM 实现阶段 0。真实 Qwen + DeepSeek Harness + OSWorld 1 题按最小资源探测后再选执行机。
