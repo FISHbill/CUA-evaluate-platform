@@ -10,21 +10,23 @@
 
 搭建 Linux 上的 CUA 评测平台：比较 **模型 + harness** 在公开 bench 上的表现。结果表形态对齐 Qwen-CUA Table 1（单指标，或 `binary / partial`、`task success / ASR`）。
 
-当前交付只到 **阶段 0 + 阶段 1 smoke**，不是八个 bench 全量。
+当前交付：**阶段 0 必须在 Cursor VM 完成**（fake + dummy，无 GPU）。**阶段 1** 是真实 CUA 推理验证：OSWorld-Verified **1 题** + **Qwen 小模型** + **DeepSeek Harness**。阶段 1 若本 VM 资源不够，只实现 adapter 与 `doctor` 探测，真正跑题放到后续选定的执行机。
 
-### 阶段 0 完成标准（必须，不依赖 Docker/KVM/GPU）
+### 阶段 0 完成标准（必须，Cursor VM，不依赖 GPU/Docker 镜像）
 
 - 可安装的 Python 包 + CLI
-- fake bench + dummy 模型：`cua-eval run` 能跑完 1 题并写出结果目录
+- fake bench + **dummy** 模型 + stub harness：`cua-eval run` 能跑完 1 题并写出结果目录
 - `cua-eval report` 打出 Table 1 风格文本（含双指标列、ASR 标注越低越好）
+- `ComputeBackend` 枚举存在，仅 `local_linux` 可运行；其余 raise `UnsupportedComputeBackend`
 - `pytest` 覆盖 schema、CLI、假评测、失败分类；默认 CI **禁止**拉 VM 镜像
 
-### 阶段 1 完成标准（有 Docker+KVM 时）
+### 阶段 1 完成标准（真实推理验证）
 
 - OSWorld-Verified **1 题**，`num_envs=1`
-- 协议：截图 in → OpenAI 兼容模型（或 dummy）→ 键鼠 out → 官方 evaluator
+- Agent = **Qwen 小尺寸 VLM**（OpenAI 兼容 `base_url`）+ **DeepSeek Harness**
+- 对桌面只暴露截图 + 键鼠；不把 dsh 默认 bash 算进本实验协议
 - 环境失败记 `infra_error`，不得记成模型 0 分
-- 无 KVM/镜像时：`cua-eval doctor` 说明缺什么并退出非 0，不要假装跑过
+- 无 KVM/镜像/GPU 时：`cua-eval doctor` 说明缺什么并退出非 0，不要假装跑过
 
 ---
 
@@ -32,16 +34,18 @@
 
 | 做 | 不要做 |
 | --- | --- |
-| Python 3.11+、uv、Pydantic v2、Typer、YAML 实验配置 | Web 前端、多用户、FastAPI 控制面 |
-| 仅 harness `native-cua`（截图 + 键鼠） | Bash、DOM、a11y、厂商 Computer Use API、OpenClaw |
-| 模型走 `ModelBackend`：`dummy` 或 OpenAI 兼容 HTTP | 把 vLLM/厂商 SDK 写进评测循环 |
-| 官方 evaluator 打分；adapter 只包装 | 重写 OSWorld 打分逻辑 |
-| 单机 `num_envs=1`；调度接口可扩展 | 本阶段实现 K8s/集群执行 |
-| Mac/Windows adapter **接口预留**，实现里明确 `unsupported` | 在 Linux 上假跑 macOS 分数 |
+| Python 3.11+、uv、Pydantic v2、Typer、YAML | Web 看板、多用户、FastAPI 控制面 |
+| 真实验证：`harness=deepseek_harness` + Qwen 小模型 | 把 dummy 的分数当成模型能力 |
+| CI/骨架：dummy 模型 + stub harness | 在 Cursor VM 上强行下载 8 个 bench 镜像 |
+| 模型经 OpenAI 兼容 HTTP；不绑定 4090 | 把 vLLM/厂商 SDK 写死在循环里 |
+| `ComputeBackend`：实现 `local_linux`，预留 windows_pc / cloud_single / small_cluster / gpu_cluster | 本阶段实现 Windows 宿主机或 K8s 调度 |
+| 官方 OSWorld evaluator；adapter 只包装 | 重写打分逻辑 |
+| OSWorld 协议：截图 + 键鼠 | 本阶段把 dsh 的 bash/编辑器算进分数 |
+| Mac/Windows **bench 客户机** 标 `unsupported` | 在 Linux 上假跑 macOS 分数 |
 | 本地 `results/` + `artifact_retention_days`（默认 14） | 本阶段上 MinIO/S3 |
-| 密钥只从环境变量读 | 把 API key 写进 git、YAML、桌面 VM |
+| 密钥只从环境变量读 | API key 进 git / YAML / 桌面 VM |
 
-非目标：训练、RL rollout、官方 leaderboard 代跑、复现论文绝对分数。
+非目标：训练、官方 leaderboard 代跑、复现论文绝对分数、本阶段跑满 8 个 bench。
 
 ---
 
@@ -57,8 +61,10 @@ src/cua_eval/
   __init__.py
   cli.py                 # cua-eval
   schema.py              # Experiment, AgentSpec, Metric, RunRecord
-  backends/model.py      # ModelBackend: dummy | openai_compat
-  harness/native_cua.py  # 截图历史 + 解析键鼠动作
+  backends/compute.py    # ComputeBackend: local_linux | windows_pc | cloud_single | small_cluster | gpu_cluster
+  backends/model.py      # dummy | openai_compat（Qwen 走兼容接口）
+  harness/stub.py        # CI 用，配合 dummy
+  harness/deepseek.py    # DeepSeek Harness adapter（阶段 1）
   orchestrator/run.py
   store/results.py       # 写 results/、按 retention 清理
   report/table1.py
@@ -80,9 +86,12 @@ docs/                    # 已有 PLAN / REQUIREMENTS / RESOURCES，勿删
 
 ## 4. 核心类型
 
-评测对象主键：`(model, harness, protocol, bench, bench_version)`。本阶段 `harness=native-cua`，`protocol.observation=screenshot`，`protocol.allow_bash=false`。
+评测对象主键：`(model, harness, protocol, bench, bench_version, compute_backend)`。
 
-**中立动作**（模型输出 JSON，禁止 shell 字段）：
+- 阶段 0：`harness=stub`，`model.backend=dummy`，`compute_backend=local_linux`
+- 阶段 1：`harness=deepseek_harness`，`model.backend=openai_compat`（Qwen 小 VLM），`bench=osworld_verified`
+
+**中立动作**（OSWorld 协议，禁止 shell 字段进入本实验）：
 
 ```text
 click {x, y, button?}
@@ -124,24 +133,29 @@ cua-eval report <run_id>     # Table 1 文本到 stdout，并写 results/<run_id
 cua-eval prune               # 按配置清理过期产物
 ```
 
-`smoke_fake.yaml` 要点：`bench: fake`，`model.backend: dummy`，`max_steps: 3`，`task_ids: [fake-001]`。
+`smoke_fake.yaml`：`bench: fake`，`model.backend: dummy`，`harness: stub`，`compute_backend: local_linux`。
 
-`smoke_osworld.yaml`：`bench: osworld_verified`，`task_ids` 只含 1 个官方任务 id，`num_envs: 1`，`model.backend: dummy` 或 `openai_compat`（`base_url`/`api_key_env`/`model`）。
+`smoke_osworld.yaml`：`bench: osworld_verified`，1 个 `task_id`，`num_envs: 1`，`harness: deepseek_harness`，`model.backend: openai_compat`，`model.name` 为选定的小 Qwen VLM。无 GPU 时不要默认改成 dummy 还报「已验证模型」；应让 `doctor` 失败。
 
-模型密钥：`api_key_env: OPENAI_API_KEY` 这种 **环境变量名**，不要把 key 写进 YAML。
+模型密钥：`api_key_env` 只写环境变量名。
 
 ---
 
-## 6. 模型后端
+## 6. 模型后端与 Harness
 
-`ModelBackend.complete(messages, images) -> text`
+`ModelBackend.complete(...)`：
 
-- `dummy`：忽略图，返回固定 `terminate` 或简单 `wait`，保证循环能结束。
-- `openai_compat`：Chat Completions，多模态图用 data URL 或官方 vision 格式；超时、429 → `model_error` 可重试有限次。
+- `dummy`：平台自测，**不是**推理验证。
+- `openai_compat`：接 Qwen 小 VLM（DashScope / 本地 vLLM / 集群网关）。不绑定 4090。
 
-以后集群只换 `base_url`，不要新造 RPC。本阶段不要实现 vLLM 启动脚本（可在 README 留一行示例命令）。
+`Harness`：
 
-截图历史：最多保留 **20** 张（与 Qwen-CUA 主设定对齐）；超出则丢掉最旧的图、保留动作文本。本阶段不必做 chunked folding。
+- `stub`：配合 dummy，保证循环结束。
+- `deepseek_harness`：包装 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。pin 版本写入配置。对 OSWorld 只挂截图/键鼠工具。dsh 是 Node 项目：用官方 CLI/API 或 subprocess，不要把整个 dsh 源码抄进本仓库。
+
+`ComputeBackend.run_job`：本阶段 `local_linux` 即当前进程。`windows_pc` / `cloud_single` / `small_cluster` / `gpu_cluster` 仅 stub。
+
+截图历史最多 20 张。本阶段不必做 chunked folding。
 
 ---
 
@@ -167,12 +181,14 @@ class BenchAdapter(Protocol):
 
 ## 8. 实现顺序（一次做完再停）
 
-1. `pyproject.toml` + 空包 + `cua-eval --help`
-2. schema 与 YAML 加载校验
-3. dummy backend + native-cua 循环 + fake bench
-4. `run` / `report` / `prune`
+1. `pyproject.toml` + CLI help
+2. schema（含 compute_backend / harness 枚举）与 YAML
+3. dummy + stub + fake bench
+4. `run` / `report` / `prune` / `doctor`
 5. pytest（fake 路径）
-6. `doctor` + OSWorld adapter smoke（机器允许才真正跑 VM；默认测试跳过）
+6. DeepSeek Harness adapter 骨架 + OSWorld adapter（无资源则 skip 真跑）
+
+---
 
 更新 [README.md](README.md)：安装、`uv sync`、两条 smoke 命令、`doctor`。保留 docs 链接。
 
@@ -190,10 +206,10 @@ class BenchAdapter(Protocol):
 
 实现时用合理默认，不要停下来问：
 
-- 各 bench 安全语义：本阶段出网允许；RedTeamCUA 以后再隔离
-- 4090/云主机规格：代码只认 OpenAI 兼容 URL
-- OSWorld 任务 pin 的精确 commit：实现阶段 1 时查官方 Verified 文档并写入 yaml
-- Gym-Anything 子集、MyPCBench 主指标：未做那些 adapter 前不用定
-- 许可证：不要提交官方 VM 镜像
+- 各 bench 安全语义
+- 真实 Qwen+dsh+OSWorld 跑在哪类执行机：用阶段 0/`doctor` 的最小消耗再选，不在代码里写死 4090
+- 选用哪一个具体 Qwen 小模型 id：实现时在 `smoke_osworld.yaml` 放可改字段，默认选公开的小尺寸 VL
+- OSWorld 官方 commit pin：接 adapter 时写入 yaml
+- DeepSeek Harness 的 computer-use 插件若上游尚未提供：在 adapter 里用最小截图/键鼠工具桥接到 OSWorld，不要改成 coding bash 评测
 
 若与 REQUIREMENTS 冲突，以 REQUIREMENTS 为准并改本文。

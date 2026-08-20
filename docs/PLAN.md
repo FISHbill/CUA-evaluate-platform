@@ -264,8 +264,9 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 阶段 0/1 按仓库根目录 [AGENT.md](../AGENT.md) 直接实现。下列项等用到对应 bench 或租 GPU 机时再补：
 
 - 各 bench 的安全语义与网络隔离（尤其 RedTeamCUA）
-- 租赁云主机与 4090 的具体 CPU/内存/磁盘规格
-- OSWorld 单题的最终 task id 与官方仓库 pin（实现 adapter 时写入 yaml）
+- 真实 Qwen+DeepSeek Harness+OSWorld 选哪类执行机（Windows PC / 云单机 / 集群）：用最小验证消耗决定，**不绑定 4090**
+- 具体哪一个 Qwen 小模型 id（YAML 可配）
+- OSWorld 单题 task id 与官方仓库 pin
 - Gym-Anything 测试子集、MyPCBench 主指标口径
 - 官方 VM 镜像许可证与 gated 账号
 
@@ -277,14 +278,15 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 | 项 | 确认值 |
 | --- | --- |
-| 第一期范围 | 阶段 0 骨架 + OSWorld-Verified **1 题** smoke |
-| 协议 | 仅 screenshot + 键鼠；不接厂商 CUA API；不要 Bash |
+| 第一期范围 | Cursor VM 做阶段 0（fake+dummy）；真实推理验证 = OSWorld **1 题** + Qwen 小模型 + DeepSeek Harness |
+| 协议 | OSWorld：截图 + 键鼠；dsh 的 bash 不计入本实验 |
 | 用户界面 | 仅 CLI |
-| 模型调用 | OpenAI 兼容 HTTP（dummy / 本机 4090 / 云端），便于以后接计算卡集群 |
+| 模型 | dummy 仅平台自测；真实验证走 OpenAI 兼容接口上的小 Qwen |
+| 计算后端 | 实现 `local_linux`；预留 `windows_pc` / `cloud_single` / `small_cluster` / `gpu_cluster` |
 | 存储 | 本地目录；`artifact_retention_days` 可配 |
-| Mac / Windows | 接口预留，不跑 |
+| Bench 客户机 Mac/Windows | 不跑 |
 | 成功标准 | 内部跑通与可复现对比，不对齐论文分数 |
-| 并发 | 单机 `num_envs=1` |
+| 并发 | `num_envs=1` |
 | 出网 | 允许 |
 
 其余延后项见第 7 节，不阻塞编码。
