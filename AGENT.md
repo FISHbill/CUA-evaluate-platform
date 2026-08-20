@@ -22,9 +22,10 @@
 
 ### 阶段 1 完成标准（真实推理验证）
 
-- OSWorld-Verified **1 题**，`num_envs=1`
+- OSWorld-Verified **1 题**（`5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57`），`num_envs=1`，`max_steps=50`
 - Agent = **Qwen 小尺寸 VLM**（OpenAI 兼容 `base_url`）+ **DeepSeek Harness**
-- 对桌面只暴露截图 + 键鼠；不把 dsh 默认 bash 算进本实验协议
+- 模型接入实现 **api / local 两条 route**，前期只填云 API 那条
+- 协议按 2.1 的三个开关：只给截图、只给键鼠、dsh 侧 bash 关闭
 - 环境失败记 `infra_error`，不得记成模型 0 分
 - 无 KVM/镜像/GPU 时：`cua-eval doctor` 说明缺什么并退出非 0，不要假装跑过
 
@@ -40,12 +41,25 @@
 | 模型经 OpenAI 兼容 HTTP；不绑定 4090 | 把 vLLM/厂商 SDK 写死在循环里 |
 | `ComputeBackend`：实现 `local_linux`，预留 windows_pc / cloud_single / small_cluster / gpu_cluster | 本阶段实现 Windows 宿主机或 K8s 调度 |
 | 官方 OSWorld evaluator；adapter 只包装 | 重写打分逻辑 |
-| OSWorld 协议：截图 + 键鼠 | 本阶段把 dsh 的 bash/编辑器算进分数 |
+| OSWorld 协议：截图 + 键鼠（见 2.1） | 给模型 a11y 树 / DOM / 软件 API |
+| 模型接入同时支持 API 与本地两条 route | 只做一条路线、把端点写死在代码里 |
 | Mac/Windows **bench 客户机** 标 `unsupported` | 在 Linux 上假跑 macOS 分数 |
-| 本地 `results/` + `artifact_retention_days`（默认 14） | 本阶段上 MinIO/S3 |
+| 本地 `results/` + `artifact_retention_days`（默认 14） | 本阶段上 MinIO/S3、上 SQLite 或任何数据库 |
 | 密钥只从环境变量读 | API key 进 git / YAML / 桌面 VM |
 
 非目标：训练、官方 leaderboard 代跑、复现论文绝对分数、本阶段跑满 8 个 bench。
+
+### 2.1 协议定义（三个独立开关）
+
+「禁止 bash」指的是**禁止模型绕过图形界面、通过软件的 API / 脚本接口直接完成操作**，不是禁止模型打字。三个开关分开配、分开记：
+
+| 开关 | 本阶段取值 | 含义 |
+| --- | --- | --- |
+| `observation` | `screenshot`（锁定） | 只给截图。**禁止** a11y 树、DOM、应用脚本接口等任何结构化读取 |
+| `guest_actions` | `mouse_keyboard`（锁定） | 只有键鼠。**agent 在桌面 VM 里打开终端打字是合法键鼠操作，不受限制** |
+| `harness_bash` | `false`（默认关，取值待定） | dsh 侧的 bash 工具，即在宿主/工作区直接执行命令 |
+
+`harness_bash` 以后若打开，**必须**作为独立实验列，`protocol` 字段照实写进 `RunRecord`。GUI-only 与 GUI+Bash 的分数不得进同一列。
 
 ---
 
@@ -91,6 +105,19 @@ docs/                    # 已有 PLAN / REQUIREMENTS / RESOURCES，勿删
 - 阶段 0：`harness=stub`，`model.backend=dummy`，`compute_backend=local_linux`
 - 阶段 1：`harness=deepseek_harness`，`model.backend=openai_compat`（Qwen 小 VLM），`bench=osworld_verified`
 
+**模型接入两条路线**（都是 OpenAI 兼容 HTTP，区别只在端点在谁家）：
+
+```text
+model.backend        dummy | openai_compat
+model.endpoint_kind  api | local        # openai_compat 时必填
+model.name           模型 id
+model.api_key_env    只写环境变量名
+```
+
+`endpoint_kind=api` 是云端模型 API（前期路线），`local` 是本地 vLLM 或计算卡集群网关（后续路线）。两者映射到 6.3 里 cordis.yml 的两条 route。`endpoint_kind` 必须写进 `RunRecord` 并在 Table 1 里可区分：同一个模型跑在云 API 还是本地卡上，分数可比但要能分辨。`doctor` 对两条路线检查不同项——`api` 查密钥存在与端点联通，`local` 查端点存活。
+
+**运行限制**（`AgentSpec.limits`）：`max_steps` 默认 **50**，`num_envs` 默认 1，另有整题 wall-clock 超时。这些字段必须在 schema 里，`smoke_osworld.yaml` 要能覆盖。
+
 **中立动作**（OSWorld 协议，禁止 shell 字段进入本实验）：
 
 ```text
@@ -106,7 +133,16 @@ terminate {status}  # success | fail
 
 坐标：归一化到截图像素或 0–1 相对坐标，schema 里写死一种并在 OSWorld adapter 转换。推荐 **像素坐标**，与截图尺寸一起存。
 
-**Metric**：`name`, `value: float`, `higher_is_better`, `unit?`。OSWorld-Verified 用 `success_rate`；Table 1 渲染器必须能显示 `a / b`（为 2.0 / RedTeamCUA 预留），即使 smoke 只有单值。
+**Metric**：`name`, `value: float`, `higher_is_better`, `unit?`。
+
+数值口径（写死，不要再选）：
+
+```text
+逐题分数    OSWorld 官方 evaluator 原样返回的 0.0–1.0 float，存进 result.json
+聚合指标    success_rate，百分数，unit="percent"，higher_is_better=true
+```
+
+即逐题存 `0.0 / 1.0`，汇总列显示 `50.0`（percent）而不是 `0.5`。本阶段**只记 OSWorld 这一个指标**；Table 1 渲染器仍须具备 `a / b` 双指标与 ASR 越低越好的能力（为 2.0 / RedTeamCUA 预留），但阶段 1 不启用。
 
 **失败类**：`ok` | `task_fail` | `infra_error` | `model_error`。`infra_error` 不计入成功率分母时要在 report 里写清（例如 `2/2 scored, 1 infra skipped`）。
 
@@ -122,6 +158,8 @@ results/<run_id>/<bench_id>/<model_id>/<task_id>/
 
 `run_id` 用时间戳+短随机，避免覆盖。`cua-eval prune` 按 `artifact_retention_days` 删过期 `results/<run_id>`。
 
+**不引入 SQLite 或任何数据库**。本阶段只有单机单题，结果就是上面这些文件：`result.json` 供 `report` 解析，`table1.md` 供人读。
+
 ---
 
 ## 5. CLI
@@ -135,7 +173,27 @@ cua-eval prune               # 按配置清理过期产物
 
 `smoke_fake.yaml`：`bench: fake`，`model.backend: dummy`，`harness: stub`，`compute_backend: local_linux`。
 
-`smoke_osworld.yaml`：`bench: osworld_verified`，1 个 `task_id`，`num_envs: 1`，`harness: deepseek_harness`，`model.backend: openai_compat`，`model.name` 为选定的小 Qwen VLM。无 GPU 时不要默认改成 dummy 还报「已验证模型」；应让 `doctor` 失败。
+`smoke_osworld.yaml`：
+
+```text
+bench                osworld_verified
+bench_commit         >= 091f5ef（见第 7 节）
+task_id              5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57
+num_envs             1
+max_steps            50
+harness              deepseek_harness
+harness_version      pin 的 deepseek-harness-sdk 版本
+cordis_config        configs/dsh/osworld_gui_only.cordis.yml
+model.backend        openai_compat
+model.endpoint_kind  api（前期）
+model.name           选定的小 Qwen VLM，可改字段
+model.api_key_env    环境变量名
+protocol.observation     screenshot
+protocol.guest_actions   mouse_keyboard
+protocol.harness_bash    false
+```
+
+无 GPU / 无端点时不要默认改成 dummy 还报「已验证模型」；应让 `doctor` 失败。
 
 模型密钥：`api_key_env` 只写环境变量名。
 
