@@ -10,7 +10,9 @@
 
 搭建 Linux 上的 CUA 评测平台：比较 **模型 + harness** 在公开 bench 上的表现。结果表形态对齐 Qwen-CUA Table 1（单指标，或 `binary / partial`、`task success / ASR`）。
 
-当前交付：**阶段 0 必须在 Cursor VM 完成**（fake + dummy，无 GPU）。**阶段 1** 是真实 CUA 推理验证：OSWorld-Verified **1 题** + **Qwen 小模型** + **DeepSeek Harness**。阶段 1 若本 VM 资源不够，只实现 adapter 与 `doctor` 探测，真正跑题放到后续选定的执行机。
+当前交付：**阶段 0 必须在 Cursor VM 完成**（fake + dummy，无 GPU）。**阶段 1** 是真实 CUA 推理验证：OSWorld-Verified **1 题** + **Qwen 小模型** + **DeepSeek Harness**。
+
+Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker/qemu、`/dev/kvm` 普通用户不可读，低于 [docs/RESOURCES.md](docs/RESOURCES.md) 第 6.1 节的 8 vCPU / 32 GB）。因此在该 VM 上只实现 adapter 与 `doctor` 探测，真正跑题放到后续选定的执行机。
 
 ### 阶段 0 完成标准（必须，Cursor VM，不依赖 GPU/Docker 镜像）
 
@@ -110,7 +112,7 @@ third_party/OSWorld      # checkout，不进 git（见 .gitignore）
 
 ## 4. 核心类型
 
-评测对象主键：`(model, harness, protocol, bench, bench_version, compute_backend)`。
+评测对象主键：`(model, endpoint_kind, harness, protocol, bench, bench_version, compute_backend)`。
 
 - 阶段 0：`harness=stub`，`model.backend=dummy`，`compute_backend=local_linux`
 - 阶段 1：`harness=deepseek_harness`，`model.backend=openai_compat`（Qwen 小 VLM），`bench=osworld_verified`
