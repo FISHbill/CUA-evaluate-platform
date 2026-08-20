@@ -151,11 +151,85 @@ cua-eval prune               # 按配置清理过期产物
 `Harness`：
 
 - `stub`：配合 dummy，保证循环结束。
-- `deepseek_harness`：包装 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。pin 版本写入配置。对 OSWorld 只挂截图/键鼠工具。dsh 是 Node 项目：用官方 CLI/API 或 subprocess，不要把整个 dsh 源码抄进本仓库。
+- `deepseek_harness`：包装 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（下称 dsh）。不要把 dsh 源码抄进本仓库。
 
 `ComputeBackend.run_job`：本阶段 `local_linux` 即当前进程。`windows_pc` / `cloud_single` / `small_cluster` / `gpu_cluster` 仅 stub。
 
-截图历史最多 20 张。本阶段不必做 chunked folding。
+### 6.1 dsh 接入方式（已核实，不要按旧假设实现）
+
+dsh 有**官方 Python SDK**，不需要 Node 工具链：
+
+```text
+包名 deepseek-harness-sdk（PyPI）  导入名 deepseek_harness
+requires-python >=3.10   依赖 pydantic>=2.12,<3
+装它会带 deepseek-harness-runtime-bin，内含独立 ELF 可执行 dsh-jsonrpc-agent
+（linux-x64 / linux-arm64 / macos-arm64），SDK 用 JSON-RPC stdio 驱动它
+```
+
+adapter 直接用 `from deepseek_harness import DeepSeekHarness`，不要自己拼 Node CLI。
+
+**版本 pin 与预发布陷阱**：SDK 目前只有预发布版（如 `0.1.0rc7`）。`uv` 若用 `--prerelease=allow`，pydantic 会被一起拉成 beta（实测 `2.14.0b1`）。pyproject 里必须写：
+
+```toml
+[tool.uv]
+prerelease = "if-necessary-or-explicit"
+```
+
+这样只有确实没有正式版的包走预发布，pydantic 仍解析到稳定版（实测 `2.13.4`）。dsh 版本号 pin 进 `smoke_osworld.yaml`。
+
+### 6.2 自备 cordis.yml（阶段 1 的硬性前提）
+
+`cordis.yml` 是 dsh 的插件组合清单。**禁止用 SDK 的零配置默认组合**：它挂了 `dsh-bash-local` / `dsh-subprocess-local` / `dsh-fs-local`，一启动就把 bash 交给模型，直接违反第 2 节的协议约束。
+
+本仓库自备一份 `configs/dsh/osworld_gui_only.cordis.yml`，纳入版本控制，与 dsh 版本一起 pin。相对默认组合必须做三件事：
+
+1. **不挂** `dsh-bash-local`、`dsh-subprocess-local`、`dsh-fs-local`。
+2. **补挂** `dsh-attachment-local`。默认组合没有它，缺了截图进不了会话。
+3. **挂** `dsh-llm-pi-ai` 声明模型 route（见 6.3），替换默认的 `dsh-llm-deepseek`。
+
+上游**没有** computer-use 插件（已核实：仓库 9060 条路径中无任何 screenshot / 键鼠相关包），键鼠与截图工具必须自己提供。实现方式：本仓库写一个 Python MCP server 暴露第 4 节的中立动作，通过 dsh 的 `@deepseek-ai/dsh-mcp-client` 插件以 stdio 挂进 cordis.yml。这样键鼠代码留在本仓库，不必往 dsh 里写 TypeScript，且工具返回的图片是 dsh 官方支持的路径。
+
+### 6.3 模型 route：一个插件两条路线
+
+`dsh-llm-pi-ai` 是通用多 provider adapter，一个实例可持有多条 route；pi-ai 未内置的端点整份声明即可，OpenAI 兼容网关与自托管服务器都属于配置而非改代码。API 路线与本地路线因此是两条并列 route，切换只改实验 YAML 选哪条：
+
+```yaml
+- id: llm
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      qwen-api:                    # endpoint_kind: api
+        api: openai-completions
+        baseURL: <云端 OpenAI 兼容地址>
+        apiKeyEnv: <环境变量名>
+        models: [{ id: <qwen-vl-model-id> }]
+      qwen-local:                  # endpoint_kind: local（vLLM / 集群网关）
+        api: openai-completions
+        baseURL: <本地 OpenAI 兼容地址>
+        apiKeyEnv: <环境变量名>
+        models: [{ id: <qwen-vl-model-id> }]
+```
+
+`apiKeyEnv` 只写环境变量名，与第 2 节的密钥约束一致。自建网关请求形状有差异时用 pi-ai 的 `compat` 字段修正，不要改 adapter 代码。
+
+**接图能力必须先验证再跑题**：pi-ai 文档称 input modalities 由其内置 catalog 提供，自建 route 不能声明该字段。接 adapter 的第一步是发一张截图做连通性测试，确认模型真的收到了图。若自建 route 不吃图，退路是改用 `dsh-llm-deepseek` 并把 `baseURL` 指向 Qwen 端点、给该 model 显式声明 `inputModalities: [text, image]`；代价是只剩一条固定 route（`deepseek-official`）且带 DeepSeek 专有 thinking 语义，因此只作退路。
+
+### 6.4 截图格式与数量上限（dsh 会静默丢图）
+
+dsh 对图像有两道上限，撞上了不会报错而是降级，必须按这些数字设计：
+
+| 限制 | 默认值 | 后果 |
+| --- | --- | --- |
+| `maxImageDimension` | 2000 px/边 | 超限报 `IMAGE_DIMENSION_TOO_LARGE` 并毒化整个会话 |
+| `maxRequestImageBytes` | 20 MiB 累计 base64 | 超限把最旧图片替换成占位符，**且不记 session event** |
+
+因此定死：
+
+- 送模型的截图用 **JPEG**，分辨率 **1920×1080**（1920 < 2000，恰好安全；不要提高分辨率）。PNG 单张 1–3 MB，base64 后约 5–15 张就触顶 20 MiB。
+- 在 cordis.yml 里**显式**写出这两个上限，不要依赖默认值。
+- 截图历史上限 20 张由**平台侧**裁剪并写进 `trace.jsonl`，记录每步实际送入的张数。不要依赖 dsh 的静默 offload——它不记事件，会让 trace 声称送了 20 张而模型只看到几张。
+
+本阶段不必做 chunked folding。
 
 ---
 
@@ -172,10 +246,22 @@ class BenchAdapter(Protocol):
 ```
 
 - `fake`：内存任务，截图可用 64×64 纯色 PNG；evaluator 对 dummy 给固定分即可。
-- `osworld_verified`：调用官方 Docker provider，**pin 官方仓库 commit**（写入配置，不要浮动 `main`）。不要把 OSWorld 源码复制进本仓库；checkout 到 `third_party/OSWorld`（gitignore 大镜像）。
-- `macos` / `windows`：类存在，`prepare`/`run_trial` raise `UnsupportedBenchError`。
+- `osworld_verified`：调用官方 Docker provider，**pin 官方仓库 commit**（写入配置，不要浮动 `main`）。不要把 OSWorld 源码复制进本仓库；checkout 到 `third_party/OSWorld`（已在 `.gitignore`）。
+- `macos` / `windows`：类存在（`benches/macos.py`、`benches/windows.py`），`prepare`/`run_trial` raise `UnsupportedBenchError`。
 
-阶段 1 选官方任务时优先 **本地、短、少出网** 的 OS/GIMP 类；具体 id 在实现时从 `evaluation_examples` 挑一个并写进 `smoke_osworld.yaml`。
+**OSWorld commit pin 下限**：必须 ≥ `091f5ef1d5544bc74953c77875d5feb5bed30108`。该 commit（`fix(docker): remove orphaned anonymous volumes on container teardown`）修的正是每题泄漏约 32 GB 匿名卷直到写满磁盘的问题；pin 到它之前，[docs/RESOURCES.md](docs/RESOURCES.md) 第 6 节的磁盘估算不成立。
+
+**阶段 1 的单题**（已确认，写进 `smoke_osworld.yaml`）：
+
+```text
+bench      osworld_verified
+domain     os
+task_id    5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57
+指令       从回收站恢复误删的 party night 海报
+evaluator  exact_match
+```
+
+选它的理由：纯 GUI 文件管理器操作，官方 `test_small.json` 成员，setup 只有一次小下载。`os` 域另一题（`5812b315`，创建 SSH 用户）本质是终端命令任务，不适合用来验证截图+键鼠闭环。
 
 ---
 
