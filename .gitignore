@@ -13,6 +13,14 @@ results/
 .env
 .env.*
 
+# Third-party checkouts (OSWorld etc.) and bench images — never commit these
+third_party/
+*.qcow2
+*.qcow2.zip
+
+# DeepSeek Harness session logs (DSH_SESSION_ROOT default)
+.sessions/
+
 # OS / editor
 .DS_Store
 .idea/

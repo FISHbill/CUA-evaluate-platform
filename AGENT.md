@@ -66,32 +66,42 @@
 ## 3. 仓库结构（按此创建）
 
 ```text
-AGENT.md
+AGENTS.md
 README.md
 pyproject.toml
+.github/workflows/ci.yml            # uv sync + pytest；禁止拉 VM 镜像
 configs/experiments/smoke_fake.yaml
 configs/experiments/smoke_osworld.yaml
+configs/dsh/osworld_gui_only.cordis.yml   # 自备 dsh 组合，见 6.2
 src/cua_eval/
   __init__.py
   cli.py                 # cua-eval
-  schema.py              # Experiment, AgentSpec, Metric, RunRecord
+  errors.py              # UnsupportedComputeBackend, UnsupportedBenchError, ...
+  schema.py              # Experiment, AgentSpec, Metric, RunRecord, Protocol, Limits
   backends/compute.py    # ComputeBackend: local_linux | windows_pc | cloud_single | small_cluster | gpu_cluster
-  backends/model.py      # dummy | openai_compat（Qwen 走兼容接口）
+  backends/model.py      # dummy | openai_compat（endpoint_kind: api | local）
+  harness/base.py        # Harness protocol
   harness/stub.py        # CI 用，配合 dummy
   harness/deepseek.py    # DeepSeek Harness adapter（阶段 1）
+  harness/desktop_mcp.py # 截图 + 键鼠的 MCP server，供 dsh 挂载，见 6.2
   orchestrator/run.py
   store/results.py       # 写 results/、按 retention 清理
   report/table1.py
   benches/base.py        # BenchAdapter protocol
   benches/fake.py
   benches/osworld.py     # 阶段 1；阶段 0 可先 stub
+  benches/macos.py       # raise UnsupportedBenchError
+  benches/windows.py     # raise UnsupportedBenchError
   actions.py             # 中立键鼠 schema → OSWorld pyautogui 映射
 tests/
   test_schema.py
   test_cli_fake.py
   test_table1.py
   test_retention.py
+  test_failure_classes.py   # ok / task_fail / infra_error / model_error 分类
+  test_unsupported.py       # 未实现的 backend / bench 抛对应异常
 docs/                    # 已有 PLAN / REQUIREMENTS / RESOURCES，勿删
+third_party/OSWorld      # checkout，不进 git（见 .gitignore）
 ```
 
 包名：`cua_eval`。入口：`cua-eval`。
@@ -325,12 +335,13 @@ evaluator  exact_match
 
 ## 8. 实现顺序（一次做完再停）
 
-1. `pyproject.toml` + CLI help
-2. schema（含 compute_backend / harness 枚举）与 YAML
+1. `pyproject.toml`（含 6.1 的 `[tool.uv] prerelease`）+ CLI help
+2. `errors.py` + schema（compute_backend / harness 枚举、`protocol` 三开关、`limits`、`endpoint_kind`）与两份实验 YAML
 3. dummy + stub + fake bench
 4. `run` / `report` / `prune` / `doctor`
-5. pytest（fake 路径）
-6. DeepSeek Harness adapter 骨架 + OSWorld adapter（无资源则 skip 真跑）
+5. pytest（fake 路径 + 失败分类 + unsupported 分支）
+6. `.github/workflows/ci.yml`
+7. DeepSeek Harness adapter 骨架、`harness/desktop_mcp.py`、`configs/dsh/osworld_gui_only.cordis.yml`、OSWorld adapter（无资源则 skip 真跑）
 
 ---
 
@@ -343,6 +354,9 @@ evaluator  exact_match
 - 无网、无 Docker 必须绿：`uv run pytest`
 - 标记 `@pytest.mark.osworld` 的测试默认 skip，除非 `CUA_EVAL_OSWORLD=1`
 - 禁止在测试里下载 qcow2
+- CI（`.github/workflows/ci.yml`）只跑 `uv sync` + `uv run pytest`：**不得**拉 VM 镜像、不得下载 qcow2、不得需要模型密钥
+
+阶段 0 的 pytest 必须覆盖：schema 校验、CLI 假评测全链路、Table 1 渲染（含双指标与 ASR 方向）、retention 清理、四种失败分类、未实现 backend/bench 抛 `UnsupportedComputeBackend` / `UnsupportedBenchError`。
 
 ---
 
@@ -352,8 +366,9 @@ evaluator  exact_match
 
 - 各 bench 安全语义
 - 真实 Qwen+dsh+OSWorld 跑在哪类执行机：用阶段 0/`doctor` 的最小消耗再选，不在代码里写死 4090
-- 选用哪一个具体 Qwen 小模型 id：实现时在 `smoke_osworld.yaml` 放可改字段，默认选公开的小尺寸 VL
-- OSWorld 官方 commit pin：接 adapter 时写入 yaml
-- DeepSeek Harness 的 computer-use 插件若上游尚未提供：在 adapter 里用最小截图/键鼠工具桥接到 OSWorld，不要改成 coding bash 评测
+- 选用哪一个具体 Qwen 小模型 id 与端点地址：`smoke_osworld.yaml` 里放可改字段，两条 route 的形状已由 6.3 定好
+- harness 侧 bash 是否永久禁止：本阶段一律 `false`，不要自行打开
+
+已关闭、**不要**再当成开放问题的项（见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) 第 6 节）：模型接入路线、api/local 双路线、协议三开关、OSWorld 单题 id 与 commit pin、存储形态（无数据库）、指标口径、`max_steps=50`。上游 computer-use 插件**确认不存在**，按 6.2 自己写 MCP server，不要改成 coding bash 评测。
 
 若与 REQUIREMENTS 冲突，以 REQUIREMENTS 为准并改本文。
