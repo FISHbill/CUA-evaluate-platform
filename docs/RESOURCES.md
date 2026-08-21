@@ -164,6 +164,8 @@ Linux 上先接通 OSWorld + WebArena + ScienceBoard：**冷存储按 1 TB 规�
 
 当前确认只跑通 **OSWorld-Verified 1 题**，不要按 8 个 bench 的镜像总和买盘。官方 Ubuntu 盘压缩包（Hugging Face `xlangai/ubuntu_osworld` 的 `Ubuntu.qcow2.zip`）约 **11.4 GB**。
 
+> **前提**：下面的估算只在 OSWorld commit pin ≥ `091f5ef` 时成立。更早的版本每题会遗留一个约 32 GB 的匿名卷直到写满磁盘，任何盘都不够。见 [AGENTS.md](../AGENTS.md) 第 7 节。
+
 | 用途 | 大约占用 | 说明 |
 | --- | --- | --- |
 | 系统与 Docker 本身 | 15–25 GB | 云主机镜像常已占一部分根盘 |
@@ -194,13 +196,15 @@ Linux 上先接通 OSWorld + WebArena + ScienceBoard：**冷存储按 1 TB 规�
 
 ---
 
-## 6.1 机器规格（与磁盘配套）
+### 6.1 机器规格（与磁盘配套）
 
 只做 OSWorld 1 题 smoke：
 
-- 1 台 Linux：8 vCPU、32 GB RAM、**KVM**、**150 GB** 盘
-- GPU：可选。无卡用 dummy；有约 4090 级再起本地 OpenAI 兼容推理
+- 1 台 Linux：8 vCPU、32 GB RAM、**KVM**（`/dev/kvm` 需当前用户可读）、**150 GB** 盘
+- 模型：`endpoint_kind=api` 时本机无需 GPU；`endpoint_kind=local` 才需要能跑小 VLM 的卡，不绑定卡型
 - 出网：允许（已确认）
+
+参考：本项目的 Cursor 开发 VM 实测为 4 vCPU / 15 GB RAM、无 docker/qemu、`/dev/kvm` 对普通用户不可读，因此**不满足**上面这档，阶段 1 必须换执行机。阶段 0（fake + dummy）在该 VM 上可以完成。
 
 OSWorld-Verified 360 题全量仍建议 1 TB 盘与更高并发，那是下一阶段，不是现在的最小需求。
 
