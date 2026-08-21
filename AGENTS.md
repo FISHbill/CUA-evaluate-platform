@@ -215,14 +215,16 @@ cua-eval prune               # 按配置清理过期产物
 `smoke_osworld.yaml`：
 
 ```text
-bench                osworld_verified
-bench_commit         >= 091f5ef（见第 7 节）
-task_id              5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57
-num_envs             1
-max_steps            50
-harness              deepseek_harness
-harness_version      pin 的 deepseek-harness-sdk 版本
-cordis_config        configs/dsh/osworld.cordis.yml
+bench                     osworld_verified
+bench_version             >= 091f5ef（见第 7 节；也接受 bench_commit 作别名）
+task_ids                  [5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57]
+harness                   deepseek_harness
+harness_version           pin 的 deepseek-harness-sdk 版本
+cordis_config             configs/dsh/osworld.cordis.yml
+limits.num_envs           1
+limits.max_steps          50
+limits.task_timeout_seconds       整题 wall-clock 上限
+limits.max_screenshot_history     截图历史深度，按端点上下文容量调（见 6.4）
 model.backend           openai_compat
 model.endpoint_kind     api（前期）
 model.provider_route    cordis.yml 里的 route 名
