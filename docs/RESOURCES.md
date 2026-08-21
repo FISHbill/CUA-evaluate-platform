@@ -40,7 +40,7 @@
 | 档 | 目标 | 计算 | 存储 | 网络 | 墙钟（数量级） |
 | --- | --- | --- | --- | --- | --- |
 | A. Smoke 平台 | fake + dummy，Cursor VM | 当前机即可（约 4 vCPU / 16 GB 也能做骨架） | 代码盘即可 | 无 | 分钟级 |
-| A2. 真实 1 题 | OSWorld 1 题 + 小 Qwen + dsh | 需 KVM + 能跑小 VLM 的 GPU 或云 API；**不绑定 4090** | **根盘 ≥ 150 GB** | 首次下行约 15–25 GB + 模型权重 | 含下载数小时；纯跑题数十分钟 |
+| A2. 真实 1 题 | OSWorld 1 题 + 多模态模型 + dsh | 需 KVM；`endpoint_kind=api` 时本机无需 GPU，`local` 才需能跑该 VLM 的卡；**不绑定 4090** | **根盘 ≥ 150 GB** | 首次下行约 15–25 GB（走 `local` 再加模型权重） | 含下载数小时；纯跑题数十分钟 |
 | B. 单 bench 全量 | OSWorld-Verified 360 题，`num_envs=8` | 上表 32–48 vCPU / 96 GB | 冷数据 100 GB + 一次 run 轨迹 5–30 GB | 评测期上行 10–40 GB 到模型 API | 约 **3–8 h**（官方称 AWS 高并行可压到 ~1 h） |
 | C. Table 1 一个模型 | 8 个 bench 全量 | Linux 池 16–64 路 VM + 一台 WebArena 胖节点；Mac 另算 | 冷镜像 **0.5–2 TB**；一次 run 轨迹 **50–300 GB**（只存 JPEG）/ **0.5–2 TB**（再存录屏） | 首次下行 0.3–1 TB；评测期上行 **0.2–1 TB** 图像到 API | **数天到两周**，卡在 OSWorld 2.0 与 Mac |
 | D. Table 1 四个模型 | C × 4 | 同 C，或串行复用池 | 轨迹 ×4 | API 流量 ×4 | 按机器池线性增加 |

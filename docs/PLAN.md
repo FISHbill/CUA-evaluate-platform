@@ -212,7 +212,7 @@ cua-eval/
 ### 阶段 1 — MVP：OSWorld-Verified 单题
 
 - Adapter 包装官方 OSWorld Docker provider，commit pin ≥ `091f5ef`
-- Harness 用 **DeepSeek Harness**（screenshot → Qwen 小 VLM → click/type/scroll），自备 cordis.yml 去掉上游默认的 bash
+- Harness 用 **DeepSeek Harness**（screenshot → 多模态模型 → click/type/scroll），自备 cordis.yml 去掉上游默认的 bash
 - **只跑 1 题**（`5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57`），`num_envs=1`，`max_steps=50`。小 split（例如 10 题）属于阶段 2
 - 记录：分数、步数、token、失败类别（env reset / model / evaluator）
 
@@ -264,8 +264,8 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 阶段 0/1 按仓库根目录 [AGENTS.md](../AGENTS.md) 直接实现。下列项等用到对应 bench 或租 GPU 机时再补：
 
 - 各 bench 的安全语义与网络隔离（尤其 RedTeamCUA）
-- 真实 Qwen+DeepSeek Harness+OSWorld 选哪类执行机（Windows PC / 云单机 / 集群）：用最小验证消耗决定，**不绑定 4090**
-- 具体哪一个 Qwen 小模型 id 与端点地址（YAML 可配，两条 route 的形状已定）
+- 真实「模型 + DeepSeek Harness + OSWorld」选哪类执行机（Windows PC / 云单机 / 集群）：用最小验证消耗决定，**不绑定 4090**
+- 首轮用哪个厂商的哪个模型 id 与端点地址（YAML 可配，route 的形状已定；接口厂商中立）
 - harness 侧 bash 是否永久禁止（本阶段一律关闭）
 - Gym-Anything 测试子集、MyPCBench 主指标口径
 - 官方 VM 镜像许可证与 gated 账号
@@ -280,10 +280,10 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 | 项 | 确认值 |
 | --- | --- |
-| 第一期范围 | Cursor VM 做阶段 0（fake+dummy）；真实推理验证 = OSWorld **1 题** + Qwen 小模型 + DeepSeek Harness |
+| 第一期范围 | Cursor VM 做阶段 0（fake+dummy）；真实推理验证 = OSWorld **1 题** + 多模态模型 + DeepSeek Harness |
 | 协议 | 观测只给截图；桌面动作只给键鼠（guest 内开终端打字合法）；harness bash 关闭 |
 | 用户界面 | 仅 CLI |
-| 模型 | dummy 仅平台自测；真实验证走 OpenAI 兼容接口上的小 Qwen，`api` / `local` 两条 route |
+| 模型 | dummy 仅平台自测；真实验证走 OpenAI 兼容端点上的多模态模型，接口厂商中立，`api` / `local` 两类 route |
 | 计算后端 | 实现 `local_linux`；预留 `windows_pc` / `cloud_single` / `small_cluster` / `gpu_cluster` |
 | 存储 | 本地目录，无数据库；`artifact_retention_days` 默认 14 |
 | 指标 | 阶段 1 只记 OSWorld `success_rate`；逐题 0.0–1.0，聚合用百分数 |
@@ -298,4 +298,4 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 ## 9. 下一步
 
-按 [AGENTS.md](../AGENTS.md) 在 Cursor VM 实现阶段 0。真实 Qwen + DeepSeek Harness + OSWorld 1 题按最小资源探测后再选执行机。
+按 [AGENTS.md](../AGENTS.md) 在 Cursor VM 实现阶段 0。真实「多模态模型 + DeepSeek Harness + OSWorld 1 题」按最小资源探测后再选执行机。
