@@ -8,9 +8,11 @@
 
 ## 1. 里程碑总览
 
+进度：**M0 已完成**（`uv sync` / `cua-eval --help` / `ruff` / `mypy` / `pytest` 全绿，两份实验 YAML 通过校验）。下一步是 M1。
+
 | 里程碑 | 内容 | 执行机 |
 | --- | --- | --- |
-| M0 | 包骨架与类型层 | Cursor VM |
+| M0 | 包骨架与类型层 —— **已完成** | Cursor VM |
 | M1 | 假链路端到端跑通 | Cursor VM |
 | M2 | 报表与产物治理 | Cursor VM |
 | M3 | 测试与 CI 质量门 | Cursor VM |
