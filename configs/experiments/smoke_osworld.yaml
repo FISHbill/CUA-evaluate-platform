@@ -1,0 +1,50 @@
+# 阶段 1 的真实推理验证：OSWorld-Verified 单题 + 多模态模型 + DeepSeek Harness。
+#
+# 这份配置**不能**在开发用的 Cursor VM 上跑（4 vCPU / 15 GB、无 docker/qemu、
+# /dev/kvm 普通用户不可读），需要 8 vCPU / 32 GB / KVM / >=150 GB 盘的执行机。
+# 无端点时 doctor 应报「端点未配置」并非 0 退出，**不要**退化成 dummy 还宣称
+# 「已验证模型」。
+name: smoke_osworld
+bench: osworld_verified
+# 官方仓库 commit pin。必须 >= 091f5ef：更早的版本每题会遗留约 32 GB 匿名卷直到
+# 写满磁盘（见 AGENTS.md 第 7 节），任何盘都不够。不要浮动 main。
+bench_version: 091f5ef1d5544bc74953c77875d5feb5bed30108
+task_ids:
+  # os 域：从回收站恢复误删的海报。纯 GUI 文件管理器操作，evaluator 是 exact_match。
+  - 5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57
+compute_backend: local_linux
+artifact_retention_days: 14
+
+agent:
+  harness: deepseek_harness
+  # dsh SDK 只有预发布版，版本必须 pin。
+  harness_version: 0.1.0rc7
+  # 禁止使用 dsh 的零配置默认组合：它会挂上宿主机 bash / 文件系统。
+  cordis_config: configs/dsh/osworld.cordis.yml
+  model:
+    backend: openai_compat
+    # 首轮选定的模型。换厂商只改这里和 cordis.yml 的 route，不改代码。
+    name: Qwen2.5-VL-7B-Instruct
+    # api = 云端模型 API；换成本地 vLLM / 集群网关时改成 local。
+    endpoint_kind: api
+    # cordis.yml 里的 route 名。端点地址（baseURL）写在那份文件里。
+    provider_route: vlm-cloud
+    # 只写环境变量名，密钥本身绝不进 git / YAML / 桌面 VM。
+    api_key_env: CUA_EVAL_MODEL_API_KEY
+    # 必须含 image：未声明的 route 会在图片附加之前就把它拒掉，模型将看不到截图。
+    input_modalities: [text, image]
+  protocol:
+    observation: screenshot
+    guest_actions: mouse_keyboard
+    # 已确认允许 bash，落点是桌面 VM 内部（走 OSWorld 官方 run_bash_script）。
+    guest_shell: true
+    # dsh 宿主侧 bash 保持关闭：它改不动 guest 状态，还会泄露密钥并能篡改 evaluator。
+    harness_shell: false
+  limits:
+    max_steps: 50
+    num_envs: 1
+    task_timeout_seconds: 1800
+    # 一张 1920×1080 截图对 Qwen2.5-VL 约 2,700 视觉 token，20 张约 54K。128K 上下文
+    # 放得下，但自托管时 vLLM 的 --max-model-len 常被显存压到 32K（约只够 9 张）。
+    # 拿到端点后按其实际容量调这个值，见 AGENTS.md 6.4。
+    max_screenshot_history: 20

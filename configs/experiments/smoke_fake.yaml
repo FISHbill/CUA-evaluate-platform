@@ -1,0 +1,28 @@
+# 阶段 0 的自测实验：不启动任何 VM、不出网、不需要密钥，供 CI 使用。
+#
+# dummy 不是评测对象。它不读截图、返回固定动作，只用来验证「配置 → 循环 → 写结果
+# → 报表」这条链路是通的。**dummy 的分数不代表任何模型能力。**
+name: smoke_fake
+bench: fake
+task_ids:
+  - fake-task-0001
+compute_backend: local_linux
+artifact_retention_days: 14
+
+agent:
+  harness: stub
+  model:
+    backend: dummy
+    name: dummy-fixed-actions
+    # fake bench 会产出 64×64 的纯色 PNG，所以声明 image；dummy 并不真的去读它。
+    input_modalities: [text, image]
+  protocol:
+    observation: screenshot
+    guest_actions: mouse_keyboard
+    guest_shell: false
+    harness_shell: false
+  limits:
+    max_steps: 5
+    num_envs: 1
+    task_timeout_seconds: 60
+    max_screenshot_history: 4
