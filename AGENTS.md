@@ -10,7 +10,7 @@
 
 搭建 Linux 上的 CUA 评测平台：比较 **模型 + harness** 在公开 bench 上的表现。结果表形态对齐 Qwen-CUA Table 1（单指标，或 `binary / partial`、`task success / ASR`）。
 
-当前交付：**阶段 0 必须在 Cursor VM 完成**（fake + dummy，无 GPU）。**阶段 1** 是真实 CUA 推理验证：OSWorld-Verified **1 题** + **Qwen 小模型** + **DeepSeek Harness**。
+当前交付：**阶段 0 必须在 Cursor VM 完成**（fake + dummy，无 GPU）。**阶段 1** 是真实 CUA 推理验证：OSWorld-Verified **1 题** + **一个多模态模型**（首选 Qwen 小 VLM，接口不绑定厂商）+ **DeepSeek Harness**。
 
 Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker/qemu、`/dev/kvm` 普通用户不可读，低于 [docs/RESOURCES.md](docs/RESOURCES.md) 第 6.1 节的 8 vCPU / 32 GB）。因此在该 VM 上只实现 adapter 与 `doctor` 探测，真正跑题放到后续选定的执行机。
 
@@ -25,8 +25,8 @@ Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker
 ### 阶段 1 完成标准（真实推理验证）
 
 - OSWorld-Verified **1 题**（`5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57`），`num_envs=1`，`max_steps=50`
-- Agent = **Qwen 小尺寸 VLM**（OpenAI 兼容 `base_url`）+ **DeepSeek Harness**
-- 模型接入实现 **api / local 两条 route**，前期只填云 API 那条
+- Agent = **任意 OpenAI 兼容端点上的多模态模型** + **DeepSeek Harness**；首个验证对象取 Qwen 小尺寸 VLM
+- 模型接入是**厂商中立的 route 字典**：`api` / `local` 两类端点都要能接，加一个厂商只改配置
 - 协议按 2.1 的三个开关：只给截图、只给键鼠、dsh 侧 bash 关闭
 - 环境失败记 `infra_error`，不得记成模型 0 分
 - 无 KVM/镜像/GPU 时：`cua-eval doctor` 说明缺什么并退出非 0，不要假装跑过
@@ -38,9 +38,11 @@ Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker
 | 做 | 不要做 |
 | --- | --- |
 | Python 3.11+、uv、Pydantic v2、Typer、YAML | Web 看板、多用户、FastAPI 控制面 |
-| 真实验证：`harness=deepseek_harness` + Qwen 小模型 | 把 dummy 的分数当成模型能力 |
+| 真实验证：`harness=deepseek_harness` + 多模态模型 | 把 dummy 的分数当成模型能力 |
 | CI/骨架：dummy 模型 + stub harness | 在 Cursor VM 上强行下载 8 个 bench 镜像 |
 | 模型经 OpenAI 兼容 HTTP；不绑定 4090 | 把 vLLM/厂商 SDK 写死在循环里 |
+| 模型接入厂商中立：加厂商 = 加一条 route | 代码里出现厂商名分支、把某家模型当成唯一路径 |
+| 模型必须声明 image modality，`doctor` 校验 | 拿纯文本模型跑截图协议 |
 | `ComputeBackend`：实现 `local_linux`，预留 windows_pc / cloud_single / small_cluster / gpu_cluster | 本阶段实现 Windows 宿主机或 K8s 调度 |
 | 官方 OSWorld evaluator；adapter 只包装 | 重写打分逻辑 |
 | OSWorld 协议：截图 + 键鼠（见 2.1） | 给模型 a11y 树 / DOM / 软件 API |
@@ -115,18 +117,28 @@ third_party/OSWorld      # checkout，不进 git（见 .gitignore）
 评测对象主键：`(model, endpoint_kind, harness, protocol, bench, bench_version, compute_backend)`。
 
 - 阶段 0：`harness=stub`，`model.backend=dummy`，`compute_backend=local_linux`
-- 阶段 1：`harness=deepseek_harness`，`model.backend=openai_compat`（Qwen 小 VLM），`bench=osworld_verified`
+- 阶段 1：`harness=deepseek_harness`，`model.backend=openai_compat`，`bench=osworld_verified`
 
-**模型接入两条路线**（都是 OpenAI 兼容 HTTP，区别只在端点在谁家）：
+**模型接入不绑定任何厂商。** 评测对象是「任意 OpenAI 兼容端点上的多模态模型」——Qwen VL 系列只是首个验证对象，DeepSeek V4 视觉型号、以及后续其他厂商的模型都必须能靠改配置接进来，不许在代码里出现厂商分支。
 
 ```text
-model.backend        dummy | openai_compat
-model.endpoint_kind  api | local        # openai_compat 时必填
-model.name           模型 id
-model.api_key_env    只写环境变量名
+model.backend           dummy | openai_compat
+model.endpoint_kind     api | local          # openai_compat 时必填
+model.provider_route    cordis.yml 里的 route 名（见 6.3）
+model.name              模型 id
+model.api_key_env       只写环境变量名
+model.input_modalities  必须含 image（见下）
 ```
 
-`endpoint_kind=api` 是云端模型 API（前期路线），`local` 是本地 vLLM 或计算卡集群网关（后续路线）。两者映射到 6.3 里 cordis.yml 的两条 route。`endpoint_kind` 必须写进 `RunRecord` 并在 Table 1 里可区分：同一个模型跑在云 API 还是本地卡上，分数可比但要能分辨。`doctor` 对两条路线检查不同项——`api` 查密钥存在与端点联通，`local` 查端点存活。
+`endpoint_kind=api` 是云端模型 API（前期路线），`local` 是本地 vLLM 或计算卡集群网关（后续路线）。厂商与端点全部由 `provider_route` 指向的 cordis.yml route 决定，平台代码只认 route 名。`endpoint_kind` 必须写进 `RunRecord` 并在 Table 1 里可区分：同一个模型跑在云 API 还是本地卡上，分数可比但要能分辨。
+
+**图像能力必须显式声明，否则模型看不到截图。** dsh 的两个 LLM adapter 都把未声明的模型当作纯文本（pi-ai 的 `DEFAULT_INPUT` 是 `['text']`，直连 adapter 是 `inputModalities ?? ['text']`），图像会在附加之前就被拒。CUA 评测没有截图就没有意义，所以：
+
+- 配置里必须给该 route 或该 model 声明 `image`（写法见 6.3）。
+- `doctor` **必须**校验选中的 route 声明了 image，没有就直接失败，不要跑到一半才发现模型是瞎的。
+- 纯文本模型（例如未声明 modality 的 DeepSeek V4 Flash / Pro）不能作为本项目的评测对象。
+
+`doctor` 对两条路线检查不同项——`api` 查密钥存在与端点联通，`local` 查端点存活；两条都查 image 声明。
 
 **运行限制**（`AgentSpec.limits`）：`max_steps` 默认 **50**，`num_envs` 默认 1，另有整题 wall-clock 超时。这些字段必须在 schema 里，`smoke_osworld.yaml` 要能覆盖。
 
@@ -196,10 +208,12 @@ max_steps            50
 harness              deepseek_harness
 harness_version      pin 的 deepseek-harness-sdk 版本
 cordis_config        configs/dsh/osworld_gui_only.cordis.yml
-model.backend        openai_compat
-model.endpoint_kind  api（前期）
-model.name           选定的小 Qwen VLM，可改字段
-model.api_key_env    环境变量名
+model.backend           openai_compat
+model.endpoint_kind     api（前期）
+model.provider_route    cordis.yml 里的 route 名
+model.name              模型 id，可改字段（首个验证对象取小 Qwen VLM）
+model.api_key_env       环境变量名
+model.input_modalities  [text, image]
 protocol.observation     screenshot
 protocol.guest_actions   mouse_keyboard
 protocol.harness_bash    false
@@ -216,7 +230,7 @@ protocol.harness_bash    false
 `ModelBackend.complete(...)`：
 
 - `dummy`：平台自测，**不是**推理验证。
-- `openai_compat`：接 Qwen 小 VLM（DashScope / 本地 vLLM / 集群网关）。不绑定 4090。
+- `openai_compat`：接任意 OpenAI 兼容端点上的多模态模型——云端厂商 API、本地 vLLM、集群网关都是这一种。厂商与端点由 `provider_route` 决定，**这一层不得出现厂商分支**。不绑定 4090。
 
 `Harness`：
 
@@ -259,30 +273,50 @@ prerelease = "if-necessary"
 
 上游**没有** computer-use 插件（已核实：仓库 9060 条路径中无任何 screenshot / 键鼠相关包），键鼠与截图工具必须自己提供。实现方式：本仓库写一个 Python MCP server 暴露第 4 节的中立动作，通过 dsh 的 `@deepseek-ai/dsh-mcp-client` 插件以 stdio 挂进 cordis.yml。这样键鼠代码留在本仓库，不必往 dsh 里写 TypeScript，且工具返回的图片是 dsh 官方支持的路径。
 
-### 6.3 模型 route：一个插件两条路线
+### 6.3 模型 route：厂商中立，一个插件挂任意多条
 
-`dsh-llm-pi-ai` 是通用多 provider adapter，一个实例可持有多条 route；pi-ai 未内置的端点整份声明即可，OpenAI 兼容网关与自托管服务器都属于配置而非改代码。API 路线与本地路线因此是两条并列 route，切换只改实验 YAML 选哪条：
+`dsh-llm-pi-ai` 是通用多 provider adapter，一个实例持有一个 route 字典；pi-ai 未内置的端点整份声明即可，OpenAI 兼容网关与自托管服务器都属于配置而非改代码。**加一个厂商 = 加一条 route，不动任何代码。** 实验 YAML 用 `model.provider_route` 选用哪条。
 
 ```yaml
 - id: llm
   name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
     providers:
-      qwen-api:                    # endpoint_kind: api
+      # 自建 route：任意 OpenAI 兼容云端点（endpoint_kind: api）
+      vlm-cloud-a:
         api: openai-completions
         baseURL: <云端 OpenAI 兼容地址>
         apiKeyEnv: <环境变量名>
-        models: [{ id: <qwen-vl-model-id> }]
-      qwen-local:                  # endpoint_kind: local（vLLM / 集群网关）
+        defaultInput: [text, image]        # 关键：不写则整条 route 是纯文本
+        models:
+          - id: <模型 id>
+            input: [text, image]           # 也可逐个模型声明
+      # 自建 route：本地 vLLM 或集群网关（endpoint_kind: local）
+      vlm-local:
         api: openai-completions
         baseURL: <本地 OpenAI 兼容地址>
         apiKeyEnv: <环境变量名>
-        models: [{ id: <qwen-vl-model-id> }]
+        defaultInput: [text, image]
+        models:
+          - id: <模型 id>
+      # 内置 catalog route：pi-ai 已收录的厂商，端点与模型清单都来自它
+      deepseek:
+        apiKeyEnv: <环境变量名>
+        models:
+          - id: <deepseek 视觉型号 id>
+            input: [text, image]
 ```
 
-`apiKeyEnv` 只写环境变量名，与第 2 节的密钥约束一致。自建网关请求形状有差异时用 pi-ai 的 `compat` 字段修正，不要改 adapter 代码。
+要点：
 
-**接图能力必须先验证再跑题**：pi-ai 文档称 input modalities 由其内置 catalog 提供，自建 route 不能声明该字段。接 adapter 的第一步是发一张截图做连通性测试，确认模型真的收到了图。若自建 route 不吃图，退路是改用 `dsh-llm-deepseek` 并把 `baseURL` 指向 Qwen 端点、给该 model 显式声明 `inputModalities: [text, image]`；代价是只剩一条固定 route（`deepseek-official`）且带 DeepSeek 专有 thinking 语义，因此只作退路。
+- **`defaultInput` / `input` 不是可选项。** pi-ai 的默认值是 `['text']`，漏了这行整条 route 就是纯文本，截图在附加前即被拒。`defaultInput` 是 route 级兜底（一次声明覆盖该 route 全部模型），`models[].input` 是逐模型声明；两者都可用，至少要有一个含 `image`。
+- `apiKeyEnv` 只写环境变量名，与第 2 节的密钥约束一致。
+- 自建网关请求形状有差异时用 pi-ai 的 `compat` 字段修正（`thinkingFormat` / `supportsDeveloperRole` / `maxTokensField`），不要改 adapter 代码。
+- 内置 catalog route 的 `models` 列表一旦声明就**替换**整个 catalog，只想改一个模型用 `modelOverrides`。
+- DeepSeek 系列若要作为评测对象，必须选**视觉型号**：dsh 的内置 catalog 默认不广告 vision 型号（端点未就绪），所以要在配置里显式写出该 model id 与 `input: [text, image]`。V4 Flash / Pro 未声明 modality，是纯文本，不能用。
+- 备选路径：`dsh-llm-deepseek` 直连 adapter 也支持 `inputModalities: [text, image]`，但它只注册一条固定 route（`deepseek-official`）且带 DeepSeek 专有的 thinking / `reasoning_content` 回传语义。**默认统一走 pi-ai**，只有需要 DeepSeek 官方 wire 语义时才挂它，且不要同时把同一厂商挂两遍。
+
+接 adapter 的第一步仍然是发一张截图做连通性测试，确认模型真的收到了图再跑题——声明正确但端点不支持图，只会在跑题中途失败。
 
 ### 6.4 截图格式与数量上限（dsh 会静默丢图）
 
@@ -367,10 +401,10 @@ evaluator  exact_match
 实现时用合理默认，不要停下来问：
 
 - 各 bench 安全语义
-- 真实 Qwen+dsh+OSWorld 跑在哪类执行机：用阶段 0/`doctor` 的最小消耗再选，不在代码里写死 4090
-- 选用哪一个具体 Qwen 小模型 id 与端点地址：`smoke_osworld.yaml` 里放可改字段，两条 route 的形状已由 6.3 定好
+- 真实模型+dsh+OSWorld 跑在哪类执行机：用阶段 0/`doctor` 的最小消耗再选，不在代码里写死 4090
+- 首轮用哪个厂商的哪个模型 id 与端点地址：`smoke_osworld.yaml` 里放可改字段，route 的形状已由 6.3 定好。**不要**因为这个未定就把某一家写进代码
 - harness 侧 bash 是否永久禁止：本阶段一律 `false`，不要自行打开
 
-已关闭、**不要**再当成开放问题的项（见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) 第 6 节）：模型接入路线、api/local 双路线、协议三开关、OSWorld 单题 id 与 commit pin、存储形态（无数据库）、指标口径、`max_steps=50`。上游 computer-use 插件**确认不存在**，按 6.2 自己写 MCP server，不要改成 coding bash 评测。
+已关闭、**不要**再当成开放问题的项（见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) 第 6 节）：模型接入路线与厂商中立性、api/local 双路线、协议三开关、OSWorld 单题 id 与 commit pin、存储形态（无数据库）、指标口径、`max_steps=50`。上游 computer-use 插件**确认不存在**，按 6.2 自己写 MCP server，不要改成 coding bash 评测。
 
 若与 REQUIREMENTS 冲突，以 REQUIREMENTS 为准并改本文。

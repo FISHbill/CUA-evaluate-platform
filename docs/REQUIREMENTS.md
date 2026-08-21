@@ -1,6 +1,6 @@
 # 已确认需求（2026-08-19，2026-08-20 修订）
 
-对照 [PLAN.md](./PLAN.md) 第 8 节默认假设：整体没有大的方向分歧。下面是本次确认后的约束，后续实现以本文为准。2026-08-20 补充：真实推理验证用 **Qwen 小模型 + DeepSeek Harness**；计算资源接口不绑定 4090。2026-08-20 二次确认：关闭了模型接入路线、单题 id、协议边界、存储形态、指标口径、步数上限六项待定项，见第 6 节。
+对照 [PLAN.md](./PLAN.md) 第 8 节默认假设：整体没有大的方向分歧。下面是本次确认后的约束，后续实现以本文为准。2026-08-20 补充：真实推理验证用 **多模态模型 + DeepSeek Harness**；计算资源接口不绑定 4090。2026-08-20 二次确认：关闭了模型接入路线、单题 id、协议边界、存储形态、指标口径、步数上限六项待定项，见第 6 节。2026-08-21 修订：模型接口**厂商中立**，不限于 Qwen，DeepSeek V4 视觉型号等同样可接。
 
 ---
 
@@ -32,14 +32,15 @@ WebArena 看起来「只是浏览器」，但官方站点镜像下载约 **180 G
 **真实推理验证**必须是：
 
 ```text
-Qwen 系列小尺寸多模态模型  +  DeepSeek Harness（dsh）  +  OSWorld 1 题
+一个多模态模型（OpenAI 兼容端点）  +  DeepSeek Harness（dsh）  +  OSWorld 1 题
 ```
 
-- **模型**：Qwen 小尺寸 VLM（具体 id 写 YAML，如经 OpenAI 兼容接口的 `Qwen2.5-VL-*` / 后续 Qwen-VL）。不要写死某一张卡。
+- **模型**：**接口厂商中立**。评测对象是「任意 OpenAI 兼容端点上的多模态模型」，首轮验证取 Qwen 小尺寸 VLM（如 `Qwen2.5-VL-*`），但 DeepSeek V4 视觉型号及其他厂商的模型都必须靠改配置就能接入。具体 id 写 YAML，不写死厂商、不写死某一张卡。
+- **硬性前提**：模型必须支持图像输入，且必须在配置里**显式声明** image modality——dsh 两个 adapter 都把未声明的模型当纯文本，截图会在附加前被拒。纯文本模型不能作为本项目的评测对象。
 - **Harness**：`deepseek-harness`（[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)）。平台用 adapter 调它，不把评测循环写成只服务自研 `native-cua`。
 - **注意**：dsh 上游默认组合就挂着 bash（`dsh-bash-local`），而且**没有** computer-use 插件。因此必须自备 cordis.yml 去掉 bash 并自己提供截图/键鼠工具，实现细节见 [AGENTS.md](../AGENTS.md) 第 6 节。
 
-Cursor VM 通常无 GPU：阶段 0 只保证 dummy + fake；真实 Qwen+dsh+OSWorld 放到测完最小消耗后再选的机器上跑。
+Cursor VM 通常无 GPU：阶段 0 只保证 dummy + fake；真实「模型 + dsh + OSWorld」放到测完最小消耗后再选的机器上跑。
 
 ---
 
@@ -64,12 +65,12 @@ Cursor VM 通常无 GPU：阶段 0 只保证 dummy + fake；真实 Qwen+dsh+OSWo
 
 两者在 harness 侧是同一个插件下的两条并列 route，切换是改配置而非改代码。
 
-资源决策顺序：先在 Cursor VM 用 dummy/fake 测通平台 → 用 `doctor` 和一次（或规划中的）OSWorld 1 题估 **最小验证消耗** → 再决定真实 Qwen+dsh 跑在 Windows PC、云单机还是集群。
+资源决策顺序：先在 Cursor VM 用 dummy/fake 测通平台 → 用 `doctor` 和一次（或规划中的）OSWorld 1 题估 **最小验证消耗** → 再决定真实「模型 + dsh」跑在 Windows PC、云单机还是集群。
 
 | 项 | 确认 |
 | --- | --- |
 | 现在 | Cursor VM 开发，`num_envs=1` |
-| GPU | 不假设有卡；真实小 Qwen 需要 GPU 或云 API 时另选机器 |
+| GPU | 不假设有卡；`endpoint_kind=local` 自托管模型需要 GPU 时另选机器，走 `api` 则不需要 |
 | 调度 | 本阶段只跑本地进程；集群只留接口 |
 
 ---
@@ -92,7 +93,7 @@ Cursor VM 通常无 GPU：阶段 0 只保证 dummy + fake；真实 Qwen+dsh+OSWo
 | CLI + Markdown 表 | 仅 CLI，表可打印到终端/文件 | 无 Web |
 | 单机 `num_envs=1` | Cursor VM 开发；计算后端枚举预留 | 补充 |
 | Mac/Windows **bench 客户机** 预留不跑 | 不变；另增 Windows **宿主机** 接口 | 区分客户机 vs 执行机 |
-| 仅 native-cua | 真实验证改为 **Qwen 小模型 + DeepSeek Harness** | 修订 |
+| 仅 native-cua | 真实验证改为 **多模态模型 + DeepSeek Harness**，模型接口厂商中立 | 修订 |
 | 约 4090 | **不绑定卡型** | 修订 |
 | 内部可复现，不对齐论文 | 相同；强调小模型跑通 | 无 |
 | 出网未写死 | **允许出网** | 放宽 |
@@ -104,13 +105,15 @@ Cursor VM 通常无 GPU：阶段 0 只保证 dummy + fake；真实 Qwen+dsh+OSWo
 
 ### 6.1 模型接入路线
 
-在 **harness 的配置里**声明模型端点，不在平台代码里写死。用 dsh 的 `dsh-llm-pi-ai` 插件：一个实例可持有多条 route，pi-ai 未内置的端点整份声明即可，OpenAI 兼容网关与自托管服务器都属于配置。
+在 **harness 的配置里**声明模型端点，不在平台代码里写死。用 dsh 的 `dsh-llm-pi-ai` 插件：一个实例持有一个 route 字典，pi-ai 未内置的端点整份声明即可，OpenAI 兼容网关与自托管服务器都属于配置。
 
-### 6.2 模型接入必须支持两种
+**厂商中立是硬要求**：加一个厂商等于在 cordis.yml 里加一条 route，平台代码不得出现厂商名分支。首轮验证用 Qwen 小 VLM，DeepSeek V4 视觉型号与后续其他厂商同样适用。
 
-`endpoint_kind=api`（云端模型 API，前期）与 `endpoint_kind=local`（本地 vLLM / 计算卡集群网关，后续）。两条 route 并列声明在同一份 cordis.yml 里，实验 YAML 选用哪条。具体 Qwen VL 的 model id 与端点地址仍是 YAML 可配字段，不写死。
+### 6.2 模型接入必须支持两种端点
 
-**待验证**：pi-ai 自建 route 不能声明 input modalities。接 adapter 的第一步必须用一张截图做连通性测试，确认模型真收到了图；不通时退路见 [AGENTS.md](../AGENTS.md) 第 6.3 节。
+`endpoint_kind=api`（云端模型 API，前期）与 `endpoint_kind=local`（本地 vLLM / 计算卡集群网关，后续）。两类 route 并列声明在同一份 cordis.yml 里，实验 YAML 用 `model.provider_route` 选用哪条。具体厂商、model id 与端点地址都是 YAML 可配字段。
+
+**图像能力必须显式声明**（已核实 dsh 源码，非风险而是必填项）：pi-ai 的 `DEFAULT_INPUT` 是 `['text']`，直连 adapter 也是 `inputModalities ?? ['text']`，未声明即纯文本、图像在附加前被拒。route 级写 `defaultInput: [text, image]` 或逐模型写 `input: [text, image]`，`doctor` 必须校验这一项。写法见 [AGENTS.md](../AGENTS.md) 第 6.3 节。
 
 ### 6.3 协议边界（三个独立开关）
 
