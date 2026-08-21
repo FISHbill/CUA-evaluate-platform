@@ -51,9 +51,9 @@ M2 与 M4 在 M1 之后可以并行；M3 的测试随 M0–M2 增量补，不要
 
 - **交付物**：`Experiment`、`AgentSpec`、`ModelSpec`、`Protocol`、`Limits`、`Metric`、`MetricSet`、`TrialResult`、`RunRecord`，以及枚举 `ComputeBackend` / `HarnessId` / `BenchId` / `EndpointKind` / `FailureClass`。
 - **判据**：
-  - `Protocol` 是 AGENTS.md 2.1 的三个独立字段，`harness_bash` 默认 `False`。
+  - `Protocol` 是 AGENTS.md 2.1 的四个独立字段；`guest_shell` 可为 `True`，`harness_shell` 默认且保持 `False`。
   - `Limits.max_steps` 默认 50，`num_envs` 默认 1，另有整题 wall-clock 超时。
-  - `ModelSpec` 含 `backend` / `endpoint_kind` / `provider_route` / `name` / `api_key_env` / `input_modalities`；**校验器强制 `openai_compat` 时 `input_modalities` 必须含 `image`**，否则直接拒绝配置。
+  - `ModelSpec` 含 `backend` / `endpoint_kind` / `provider_route` / `name` / `api_key_env` / `input_modalities`；**跨字段校验：`protocol.observation=screenshot` 时 `input_modalities` 必须含 `image`**，`observation=text` 时不要求，两者矛盾的组合直接拒绝配置。
   - 主键 `(model, endpoint_kind, harness, protocol, bench, bench_version, compute_backend)` 能从 `RunRecord` 还原。
   - `api_key_env` 只接受环境变量名，出现形似密钥的值要报错。
 - **验证**：`tests/test_schema.py` 覆盖默认值、三开关、image modality 强制、密钥字段拒绝字面值。
@@ -152,24 +152,30 @@ M2 与 M4 在 M1 之后可以并行；M3 的测试随 M0–M2 增量补，不要
 
 ### T4.2 `harness/desktop_mcp.py`
 
-- **交付物**：一个 MCP server（stdio），把 T1.1 的中立动作和「截图」暴露成工具。
-- **判据**：截图工具输出 **JPEG、1920×1080**（AGENTS.md 6.4 的两道上限决定了这个格式）；工具集里没有任何 shell / 文件系统能力。
-- **验证**：脱离 dsh 单独启动该 server，用一个最小 MCP 客户端列工具、调一次截图、调一次 `click`，断言返回形状正确。桌面可先用 fake bench 的纯色图顶替。
+- **交付物**：一个 MCP server（stdio），把 T1.1 的中立动作暴露成工具，工具集由 `protocol` 决定。
+- **判据**：
+  - `observation=screenshot` 时提供截图工具，输出 **JPEG、1920×1080**（AGENTS.md 6.4 的两道上限决定了这个格式）。
+  - `guest_shell=true` 时提供 `shell` 工具，底层调 OSWorld `PythonController.run_bash_script()`，命令在**桌面 VM 内**执行。**绝不能**改成在评测宿主机上执行——理由见 AGENTS.md 2.1。
+  - `guest_shell=false` 时 `shell` 工具**完全不注册**，而不是注册了再拒绝。
+  - 任何情况下都不提供宿主机文件系统能力。
+- **验证**：脱离 dsh 单独启动该 server，用一个最小 MCP 客户端列工具，断言工具集随 `protocol` 变化（四种开关组合各验一次）；调一次 `shell` 断言命令确实落在 guest 而非宿主机（例如比对 `hostname` 或某个只存在于 guest 的路径）。
 
-### T4.3 `configs/dsh/osworld_gui_only.cordis.yml`
+### T4.3 `configs/dsh/osworld.cordis.yml`
 
-- **判据**：**不挂** `dsh-bash-local` / `dsh-subprocess-local` / `dsh-fs-local`；**挂** `dsh-attachment-local`、`dsh-llm-pi-ai`、`dsh-mcp-client`；显式写出 `maxImageDimension`、`maxRequestImageBytes`；route 上写 `defaultInput: [text, image]`。
-- **验证**：加一个测试解析该 YAML 并断言「被禁插件一个都不在、必需插件一个都不缺、image modality 已声明」。这条测试是防止有人图省事换回 dsh 零配置默认组合的护栏。
+- **判据**：**不挂** `dsh-bash-local` / `dsh-subprocess-local` / `dsh-fs-local`——**`guest_shell=true` 也不挂**，guest 内的 shell 由 T4.2 的 MCP 工具提供；**挂** `dsh-attachment-local`、`dsh-llm-pi-ai`、`dsh-mcp-client`；显式写出 `maxImageDimension`、`maxRequestImageBytes`；截图协议的 route 上写 `defaultInput: [text, image]`，纯文本协议的 route 不写。
+- **验证**：加一个测试解析该 YAML 并断言「dsh 宿主 shell 插件一个都不在、必需插件一个都不缺、route 的 modality 声明与 `protocol.observation` 一致」。这条测试有两层作用：防止有人换回 dsh 零配置默认组合，也防止有人把「允许 bash」误实现成挂 `dsh-bash-local`。
 
 ### T4.4 `harness/deepseek.py`
 
-- **判据**：用官方 Python SDK 的 `DeepSeekHarness` 驱动，注入 T4.3 的 cordis 配置；把 `provider_route` / `name` 映射成 dsh 的 provider / model；**截图历史 20 张的上限由平台侧裁剪**并写进 `trace.jsonl`，不依赖 dsh 的静默 offload。dsh 相关的 API 调用集中在这一个文件里，便于 SDK 预发布版变动时收敛改动面。
+- **判据**：用官方 Python SDK 的 `DeepSeekHarness` 驱动，注入 T4.3 的 cordis 配置；把 `provider_route` / `name` 映射成 dsh 的 provider / model；`protocol` 决定注册哪些 MCP 工具；截图协议下**截图历史 20 张的上限由平台侧裁剪**并写进 `trace.jsonl`，不依赖 dsh 的静默 offload。dsh 相关的 API 调用集中在这一个文件里，便于 SDK 预发布版变动时收敛改动面。
 
 ### T4.5 mock 端点冒烟（本 VM 的最大验证边界）
 
-- **交付物**：一个本地 OpenAI 兼容 mock 服务，接收含图片的请求并返回固定动作。
-- **判据**：完整跑通「MCP 截图 → dsh → mock 模型 → 动作回到 MCP」的闭环，且能证明**图片真的到达了模型端**（在 mock 侧断言收到了 `image_url` 部分）。
-- **为什么必须做**：这是在没有真模型、没有真桌面的情况下唯一能证伪「cordis 配置错、modality 漏声明、图片没进请求」这三类问题的手段。M6 换机后再发现这些问题的代价高得多。
+- **交付物**：一个本地 OpenAI 兼容 mock 服务，返回固定动作。
+- **判据**：两条协议各跑一遍闭环——
+  - **shell 协议**：`MCP shell → dsh → mock 模型 → 动作回到 MCP`，断言 mock 侧收到的是纯文本请求、且 `shell` 工具在工具清单里。
+  - **截图协议**：断言 mock 侧确实收到了 `image_url` 部分，即**图片真的进了模型请求**。
+- **为什么必须做**：这是在没有真模型、没有真桌面的情况下唯一能证伪「cordis 配置错、modality 漏声明、图片没进请求、shell 落错机器」这四类问题的手段。M6 换机后再发现的代价高得多。
 
 ---
 
@@ -195,29 +201,41 @@ M2 与 M4 在 M1 之后可以并行；M3 的测试随 M0–M2 增量补，不要
 
 ## 8. M6 — 真实单题验证（换机）
 
+首轮配置（已确认）：`model.name=Qwen2.5-VL-7B-Instruct`、`observation=screenshot`、`guest_actions=mouse_keyboard`、`guest_shell=true`、`harness_shell=false`。
+
 **前置条件**（任一不满足就不要开始）：
 
 | 条件 | 要求 |
 | --- | --- |
 | 执行机 | 8 vCPU、32 GB RAM、`/dev/kvm` 当前用户可读、≥ 150 GB 可用盘、Docker 可用 |
-| 模型端点 | 一个 OpenAI 兼容端点上的**多模态**模型，且已在 route 上声明 `image` |
+| 模型端点 | `Qwen2.5-VL-7B-Instruct` 的 OpenAI 兼容端点 + 密钥，由使用方在环境搭好后提供 |
 | 密钥 | 通过环境变量提供，不进 git / YAML / 桌面 VM |
+| 上下文容量 | 自托管时 vLLM 的 `--max-model-len` 必须够放「截图历史深度 × 约 2,700 token」，见 AGENTS.md 6.4 |
 
 ### T6.1 环境就绪
 
-- **判据**：`cua-eval doctor` 全绿。
+- **判据**：`cua-eval doctor` 全绿。走 `endpoint_kind=local` 时 `doctor` 还要读出端点实际的 `max_model_len` 并与配置的截图历史深度核对，不够就报错而不是放行。
 
 ### T6.2 接图连通性测试
 
-- **判据**：发一张截图，确认模型端**真的收到了图**并返回了与图像内容相关的响应。声明正确但端点不支持图，只会在跑题中途才炸，所以这一步必须单独做、单独确认。
+- **判据**：发一张截图，确认模型端**真的收到了图**并返回与图像内容相关的响应。声明正确但端点不支持图只会在跑题中途才炸，所以必须单独做、单独确认，**不要凭型号名假设**。
 
-### T6.3 跑单题
+### T6.3 guest shell 落点验证
+
+- **判据**：通过 `shell` 工具执行一条命令，确认它**落在桌面 VM 内而不是评测宿主机上**（例如读取一个只存在于 guest 的路径，或比对 hostname）。落错机器的话题目永远解不了，而且等于把评测设施的 shell 交给了被评测的模型——理由见 AGENTS.md 2.1。这一条与 T6.2 都是跑题前的独立门禁。
+
+### T6.4 跑单题
 
 - **判据**：`5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57`、`num_envs=1`、`max_steps=50`，产出 `result.json` / `trace.jsonl` / `screenshots/` / `table1.md`。环境侧失败记 `infra_error`，**不得记成模型 0 分**。分数高低不是验收条件——**跑通闭环才是**。
+- **报表判据**：`protocol` 四个开关照实写进结果。这一列是「截图 + 键鼠 + guest shell」协议下的成绩，**不可**与 Qwen-CUA 论文 Table 1 的 screenshot-only 数字并列比较。
 
-### T6.4 回填最小验证消耗
+### T6.5 回填最小验证消耗
 
-- **判据**：把实测的墙钟、token 用量、磁盘占用、reset 耗时回填进 [RESOURCES.md](./RESOURCES.md)，作为后续选执行机（Windows PC / 云单机 / 集群）的依据。
+- **判据**：把实测的墙钟、token 用量（区分视觉与文本）、磁盘占用、reset 耗时回填进 [RESOURCES.md](./RESOURCES.md)，作为后续选执行机（Windows PC / 云单机 / 集群）的依据。
+
+### 可选旁支：纯文本协议列
+
+`observation=text` 是 schema 支持的合法取值，给纯文本模型留的一列（例如 dsh 出厂 catalog 里未声明 `image` 的 `deepseek-v4-flash`）。它不需要视觉模型也不需要截图管线，可作为对照列回答「没有 GUI 只有 shell 能做到多少」。**只改配置不改代码**——如果这一步需要改代码，说明协议开关没做成真正独立的字段，回去修 M0/M4。
 
 ---
 
@@ -226,8 +244,11 @@ M2 与 M4 在 M1 之后可以并行；M3 的测试随 M0–M2 增量补，不要
 | 风险 | 应对 | 何时能确认 |
 | --- | --- | --- |
 | 端点声明了 image 但实际不支持 | 单独做 T6.2，不与跑题混在一起 | M6 |
+| **bash 被误实现成宿主机 shell** | 只用 MCP 的 `shell` 工具转调 OSWorld `run_bash_script`；T4.3 断言不挂 `dsh-bash-local`；T6.3 实测落点 | M4 与 M6 |
+| **7B 上下文放不下截图历史** | 历史深度做成配置项；`doctor` 核对端点 `max_model_len`；必要时降深度而非降分辨率 | M6 |
+| 下采样截图导致点击系统性偏移 | 坐标按缩放比映射回原图，且在 `trace.jsonl` 记原图尺寸 | M4 |
 | dsh SDK 是预发布版，API 可能变 | pin 版本；dsh 调用集中在 `harness/deepseek.py` | 持续 |
-| 有人换回 dsh 零配置默认组合，bash 悄悄回来 | T4.3 的断言测试作护栏 | M4 |
+| 有人换回 dsh 零配置默认组合，宿主 bash 悄悄回来 | T4.3 的断言测试作护栏 | M4 |
 | 截图撞 20 MiB 请求上限被静默丢弃 | JPEG + 1920×1080 + 平台侧裁剪并记 trace | M4 |
 | OSWorld 旧版本每题泄漏约 32 GB | commit pin 下限 `091f5ef`；`cleanup` 回收匿名卷 | M5 |
 | 模型接入被写成只服务一家厂商 | 厂商中立是硬约束；`provider_route` 是唯一入口，代码里不得有厂商分支 | M0 与 code review |
@@ -249,11 +270,14 @@ M2 与 M4 在 M1 之后可以并行；M3 的测试随 M0–M2 增量补，不要
 
 阶段 1（M4–M6）：
 
-- [ ] cordis.yml 的护栏测试通过（无 bash、有 attachment、已声明 image）
-- [ ] MCP server 独立自测通过，截图为 JPEG 1920×1080
+- [ ] cordis.yml 的护栏测试通过（**无 `dsh-bash-local`**、有 attachment、已声明 image）
+- [ ] MCP server 独立自测通过：截图为 JPEG 1920×1080，工具集随 `protocol` 变化
+- [ ] `shell` 工具在 `guest_shell=false` 时完全不注册
 - [ ] mock 端点冒烟证明图片真的进了模型请求
 - [ ] OSWorld adapter pin ≥ `091f5ef`，`@pytest.mark.osworld` 默认 skip
-- [ ] 换机后 `doctor` 全绿
-- [ ] 接图连通性测试通过
+- [ ] 换机后 `doctor` 全绿，且已核对端点 `max_model_len` 与截图历史深度
+- [ ] 接图连通性测试通过（确认模型真收到图）
+- [ ] guest shell 落点验证通过（命令确实在桌面 VM 内执行）
 - [ ] 单题跑通，失败按四类正确归档
+- [ ] `protocol` 四开关照实写进结果，未与 screenshot-only 数字混列
 - [ ] 最小验证消耗已回填 RESOURCES.md

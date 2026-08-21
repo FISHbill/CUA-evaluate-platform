@@ -10,7 +10,7 @@
 
 搭建 Linux 上的 CUA 评测平台：比较 **模型 + harness** 在公开 bench 上的表现。结果表形态对齐 Qwen-CUA Table 1（单指标，或 `binary / partial`、`task success / ASR`）。
 
-当前交付：**阶段 0 必须在 Cursor VM 完成**（fake + dummy，无 GPU）。**阶段 1** 是真实 CUA 推理验证：OSWorld-Verified **1 题** + **一个多模态模型**（首选 Qwen 小 VLM，接口不绑定厂商）+ **DeepSeek Harness**。
+当前交付：**阶段 0 必须在 Cursor VM 完成**（fake + dummy，无 GPU）。**阶段 1** 是真实 CUA 推理验证：OSWorld-Verified **1 题** + **`Qwen2.5-VL-7B-Instruct`**（首轮选定；接口不绑定厂商）+ **DeepSeek Harness**。
 
 Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker/qemu、`/dev/kvm` 普通用户不可读，低于 [docs/RESOURCES.md](docs/RESOURCES.md) 第 6.1 节的 8 vCPU / 32 GB）。因此在该 VM 上只实现 adapter 与 `doctor` 探测，真正跑题放到后续选定的执行机。
 
@@ -25,11 +25,13 @@ Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker
 ### 阶段 1 完成标准（真实推理验证）
 
 - OSWorld-Verified **1 题**（`5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57`），`num_envs=1`，`max_steps=50`
-- Agent = **任意 OpenAI 兼容端点上的多模态模型** + **DeepSeek Harness**；首个验证对象取 Qwen 小尺寸 VLM
+- Agent = **任意 OpenAI 兼容端点上的模型** + **DeepSeek Harness**；首轮选定 **`Qwen2.5-VL-7B-Instruct`**
 - 模型接入是**厂商中立的 route 字典**：`api` / `local` 两类端点都要能接，加一个厂商只改配置
-- 协议按 2.1 的三个开关：只给截图、只给键鼠、dsh 侧 bash 关闭
+- 协议按 2.1 的四个开关。首轮：`observation=screenshot`、`guest_actions=mouse_keyboard`、`guest_shell=true`、`harness_shell=false`
 - 环境失败记 `infra_error`，不得记成模型 0 分
-- 无 KVM/镜像/GPU 时：`cua-eval doctor` 说明缺什么并退出非 0，不要假装跑过
+- 无 KVM/镜像时：`cua-eval doctor` 说明缺什么并退出非 0，不要假装跑过
+
+首轮是**截图 + 键鼠 + guest shell**：选定的模型是视觉模型（见 6.3），所以截图协议一开始就能用；bash 已确认允许，落点是桌面 VM 内部。`observation=text` 仍是 schema 支持的合法取值（给纯文本模型留的一列），但**不是**首轮配置。协议不同的 run 结果分列记录，不得混在同一列（见 2.1）。
 
 ---
 
@@ -42,10 +44,11 @@ Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker
 | CI/骨架：dummy 模型 + stub harness | 在 Cursor VM 上强行下载 8 个 bench 镜像 |
 | 模型经 OpenAI 兼容 HTTP；不绑定 4090 | 把 vLLM/厂商 SDK 写死在循环里 |
 | 模型接入厂商中立：加厂商 = 加一条 route | 代码里出现厂商名分支、把某家模型当成唯一路径 |
-| 模型必须声明 image modality，`doctor` 校验 | 拿纯文本模型跑截图协议 |
+| `observation=screenshot` 时模型必须声明 image modality，`doctor` 校验 | 拿纯文本模型跑截图协议 |
 | `ComputeBackend`：实现 `local_linux`，预留 windows_pc / cloud_single / small_cluster / gpu_cluster | 本阶段实现 Windows 宿主机或 K8s 调度 |
 | 官方 OSWorld evaluator；adapter 只包装 | 重写打分逻辑 |
-| OSWorld 协议：截图 + 键鼠（见 2.1） | 给模型 a11y 树 / DOM / 软件 API |
+| 协议四开关照实写进结果（见 2.1） | 给模型 a11y 树 / DOM / 软件 API；把不同协议的分数混进同一列 |
+| bash 落在 **guest 内**（`guest_shell`） | 挂 `dsh-bash-local` 把宿主机 shell 给 agent |
 | 模型接入同时支持 API 与本地两条 route | 只做一条路线、把端点写死在代码里 |
 | Mac/Windows **bench 客户机** 标 `unsupported` | 在 Linux 上假跑 macOS 分数 |
 | 本地 `results/` + `artifact_retention_days`（默认 14） | 本阶段上 MinIO/S3、上 SQLite 或任何数据库 |
@@ -53,17 +56,26 @@ Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker
 
 非目标：训练、官方 leaderboard 代跑、复现论文绝对分数、本阶段跑满 8 个 bench。
 
-### 2.1 协议定义（三个独立开关）
+### 2.1 协议定义（四个独立开关）
 
-「禁止 bash」指的是**禁止模型绕过图形界面、通过软件的 API / 脚本接口直接完成操作**，不是禁止模型打字。三个开关分开配、分开记：
+协议是一等公民：**每个开关都照实写进 `RunRecord.protocol`，取值不同的 run 不得进 Table 1 的同一列。**
 
-| 开关 | 本阶段取值 | 含义 |
+| 开关 | 取值 | 含义 |
 | --- | --- | --- |
-| `observation` | `screenshot`（锁定） | 只给截图。**禁止** a11y 树、DOM、应用脚本接口等任何结构化读取 |
-| `guest_actions` | `mouse_keyboard`（锁定） | 只有键鼠。**agent 在桌面 VM 里打开终端打字是合法键鼠操作，不受限制** |
-| `harness_bash` | `false`（默认关，取值待定） | dsh 侧的 bash 工具，即在宿主/工作区直接执行命令 |
+| `observation` | `screenshot` \| `text` | `screenshot` 给截图；`text` 不给截图（纯文本模型只能走这个）。两者都**禁止** a11y 树、DOM、应用脚本接口等结构化读取 |
+| `guest_actions` | `mouse_keyboard` \| `none` | 键鼠。**agent 在桌面 VM 里打开终端打字属于合法键鼠操作** |
+| `guest_shell` | `true` \| `false`（**已开放**） | 桌面 VM **内部**的 shell，经 OSWorld 官方通道执行。这就是「允许 bash」该落的地方 |
+| `harness_shell` | `false`（**保持关闭**） | dsh 宿主侧的 bash（`dsh-bash-local`），在跑 dsh 的那台机器上执行 |
 
-`harness_bash` 以后若打开，**必须**作为独立实验列，`protocol` 字段照实写进 `RunRecord`。GUI-only 与 GUI+Bash 的分数不得进同一列。
+#### 为什么 bash 必须落在 guest 侧，而不是 dsh 侧
+
+这两个不是同一个东西，选错了实验就白做：
+
+- `dsh-bash-local` 的包说明是「**Local** Service Provider」，`LocalBashExecutor` 用 `bash -c` 在 dsh 进程的 `cwd` 里起子进程——也就是**评测宿主机**，不是桌面 VM。
+- OSWorld 的任务状态全在 guest 里（回收站里的文件、GIMP 的画布、LibreOffice 的文档）。宿主机上的 shell **改不动 guest 状态**，因此解不了题。
+- 更糟的是它给了 agent 对评测设施本身的 shell：官方 evaluator 代码、任务 JSON、`results/` 目录、以及宿主机环境变量里的 API key 都在它手边。这是**打分完整性事故**，不是能力增强。
+
+所以「允许 bash」的正确实现是 `guest_shell=true`：在本仓库的 MCP server 里加一个 shell 工具，底层调 OSWorld `PythonController.run_bash_script()`，命令在**桌面 VM 内**执行。`harness_shell` 保持 `false`，除非以后有明确理由要给 agent 宿主机权限——那属于另一个实验，且必须先解决完整性问题。
 
 ---
 
@@ -76,7 +88,7 @@ pyproject.toml
 .github/workflows/ci.yml            # uv sync + pytest；禁止拉 VM 镜像
 configs/experiments/smoke_fake.yaml
 configs/experiments/smoke_osworld.yaml
-configs/dsh/osworld_gui_only.cordis.yml   # 自备 dsh 组合，见 6.2
+configs/dsh/osworld.cordis.yml   # 自备 dsh 组合，见 6.2
 src/cua_eval/
   __init__.py
   cli.py                 # cua-eval
@@ -119,7 +131,7 @@ third_party/OSWorld      # checkout，不进 git（见 .gitignore）
 - 阶段 0：`harness=stub`，`model.backend=dummy`，`compute_backend=local_linux`
 - 阶段 1：`harness=deepseek_harness`，`model.backend=openai_compat`，`bench=osworld_verified`
 
-**模型接入不绑定任何厂商。** 评测对象是「任意 OpenAI 兼容端点上的多模态模型」——Qwen VL 系列只是首个验证对象，DeepSeek V4 视觉型号、以及后续其他厂商的模型都必须能靠改配置接进来，不许在代码里出现厂商分支。
+**模型接入不绑定任何厂商。** 评测对象是「任意 OpenAI 兼容端点上的模型」——`Qwen2.5-VL-7B-Instruct` 只是首轮选定的验证对象，DeepSeek V4 系列以及后续其他厂商的模型都必须能靠改配置接进来，不许在代码里出现厂商分支。
 
 ```text
 model.backend           dummy | openai_compat
@@ -132,17 +144,17 @@ model.input_modalities  必须含 image（见下）
 
 `endpoint_kind=api` 是云端模型 API（前期路线），`local` 是本地 vLLM 或计算卡集群网关（后续路线）。厂商与端点全部由 `provider_route` 指向的 cordis.yml route 决定，平台代码只认 route 名。`endpoint_kind` 必须写进 `RunRecord` 并在 Table 1 里可区分：同一个模型跑在云 API 还是本地卡上，分数可比但要能分辨。
 
-**图像能力必须显式声明，否则模型看不到截图。** dsh 的两个 LLM adapter 都把未声明的模型当作纯文本（pi-ai 的 `DEFAULT_INPUT` 是 `['text']`，直连 adapter 是 `inputModalities ?? ['text']`），图像会在附加之前就被拒。CUA 评测没有截图就没有意义，所以：
+**图像能力必须显式声明，否则模型看不到截图。** dsh 的两个 LLM adapter 都把未声明的模型当作纯文本（pi-ai 的 `DEFAULT_INPUT` 是 `['text']`，直连 adapter 是 `inputModalities ?? ['text']`），图像会在附加之前就被拒。因此：
 
-- 配置里必须给该 route 或该 model 声明 `image`（写法见 6.3）。
-- `doctor` **必须**校验选中的 route 声明了 image，没有就直接失败，不要跑到一半才发现模型是瞎的。
-- 纯文本模型（例如未声明 modality 的 DeepSeek V4 Flash / Pro）不能作为本项目的评测对象。
+- `protocol.observation=screenshot` 时，配置里必须给该 route 或该 model 声明 `image`（写法见 6.3），`doctor` 校验不过就直接失败，不要跑到一半才发现模型是瞎的。
+- `protocol.observation=text` 时不要求 image 声明，但这条实验线**没有截图**，只能靠 `guest_shell` 观察与操作。它是一条合法的实验列，但**不是** CUA（GUI）能力的度量，不可与 Qwen-CUA Table 1 的 screenshot-only 数字并列比较。
+- `doctor` 必须拒绝「纯文本 route + `observation=screenshot`」这种自相矛盾的组合。
 
-`doctor` 对两条路线检查不同项——`api` 查密钥存在与端点联通，`local` 查端点存活；两条都查 image 声明。
+`doctor` 对两类端点检查不同项——`api` 查密钥存在与端点联通，`local` 查端点存活；`screenshot` 协议下两类都要查 image 声明。
 
 **运行限制**（`AgentSpec.limits`）：`max_steps` 默认 **50**，`num_envs` 默认 1，另有整题 wall-clock 超时。这些字段必须在 schema 里，`smoke_osworld.yaml` 要能覆盖。
 
-**中立动作**（OSWorld 协议，禁止 shell 字段进入本实验）：
+**中立动作**（OSWorld 协议）：
 
 ```text
 click {x, y, button?}
@@ -153,7 +165,10 @@ type {text}
 key {keys}          # e.g. ["ctrl", "s"]
 wait {seconds}
 terminate {status}  # success | fail
+shell {command, timeout?}   # 仅当 protocol.guest_shell=true；在桌面 VM 内执行
 ```
+
+`shell` 动作只有在 `guest_shell=true` 时才注册进工具集；为 `false` 时**必须完全不暴露**，不能只在执行时拒绝。它的落点是 guest，不是宿主机，理由见 2.1。
 
 坐标：归一化到截图像素或 0–1 相对坐标，schema 里写死一种并在 OSWorld adapter 转换。推荐 **像素坐标**，与截图尺寸一起存。
 
@@ -207,17 +222,22 @@ num_envs             1
 max_steps            50
 harness              deepseek_harness
 harness_version      pin 的 deepseek-harness-sdk 版本
-cordis_config        configs/dsh/osworld_gui_only.cordis.yml
+cordis_config        configs/dsh/osworld.cordis.yml
 model.backend           openai_compat
 model.endpoint_kind     api（前期）
 model.provider_route    cordis.yml 里的 route 名
-model.name              模型 id，可改字段（首个验证对象取小 Qwen VLM）
+model.name              Qwen2.5-VL-7B-Instruct（首轮；可改字段，不写死厂商）
 model.api_key_env       环境变量名
 model.input_modalities  [text, image]
 protocol.observation     screenshot
 protocol.guest_actions   mouse_keyboard
-protocol.harness_bash    false
+protocol.guest_shell     true
+protocol.harness_shell   false
 ```
+
+端点地址与密钥由使用方在环境搭好后提供，配置里只放 `api_key_env` 与 `baseURL` 的可改字段；在提供之前 `doctor` 应报「端点未配置」并非 0 退出，不要退化成 dummy。
+
+换模型只改这份 YAML 与 cordis.yml 的 route，不改代码。若要跑纯文本模型，另存一份 `observation=text` 的 YAML 并列保存，不要互相覆盖。
 
 无 GPU / 无端点时不要默认改成 dummy 还报「已验证模型」；应让 `doctor` 失败。
 
@@ -263,11 +283,11 @@ prerelease = "if-necessary"
 
 ### 6.2 自备 cordis.yml（阶段 1 的硬性前提）
 
-`cordis.yml` 是 dsh 的插件组合清单。**禁止用 SDK 的零配置默认组合**：它挂了 `dsh-bash-local` / `dsh-subprocess-local` / `dsh-fs-local`，一启动就把 bash 交给模型，直接违反第 2 节的协议约束。
+`cordis.yml` 是 dsh 的插件组合清单。**禁止用 SDK 的零配置默认组合**：它挂了 `dsh-bash-local` / `dsh-subprocess-local` / `dsh-fs-local`，把**宿主机**的 shell 和文件系统交给模型——目标错了（改不动 guest 状态）且是打分完整性事故，理由见 2.1。
 
-本仓库自备一份 `configs/dsh/osworld_gui_only.cordis.yml`，纳入版本控制，与 dsh 版本一起 pin。相对默认组合必须做三件事：
+本仓库自备 `configs/dsh/osworld.cordis.yml`，纳入版本控制，与 dsh 版本一起 pin。相对默认组合必须做三件事：
 
-1. **不挂** `dsh-bash-local`、`dsh-subprocess-local`、`dsh-fs-local`。
+1. **不挂** `dsh-bash-local`、`dsh-subprocess-local`、`dsh-fs-local`。**即使 `guest_shell=true` 也不挂**——guest 内的 shell 由本仓库 MCP server 的 `shell` 工具提供，不是由 dsh 的宿主 bash 提供。
 2. **补挂** `dsh-attachment-local`。默认组合没有它，缺了截图进不了会话。
 3. **挂** `dsh-llm-pi-ai` 声明模型 route（见 6.3），替换默认的 `dsh-llm-deepseek`。
 
@@ -313,10 +333,26 @@ prerelease = "if-necessary"
 - `apiKeyEnv` 只写环境变量名，与第 2 节的密钥约束一致。
 - 自建网关请求形状有差异时用 pi-ai 的 `compat` 字段修正（`thinkingFormat` / `supportsDeveloperRole` / `maxTokensField`），不要改 adapter 代码。
 - 内置 catalog route 的 `models` 列表一旦声明就**替换**整个 catalog，只想改一个模型用 `modelOverrides`。
-- DeepSeek 系列若要作为评测对象，必须选**视觉型号**：dsh 的内置 catalog 默认不广告 vision 型号（端点未就绪），所以要在配置里显式写出该 model id 与 `input: [text, image]`。V4 Flash / Pro 未声明 modality，是纯文本，不能用。
 - 备选路径：`dsh-llm-deepseek` 直连 adapter 也支持 `inputModalities: [text, image]`，但它只注册一条固定 route（`deepseek-official`）且带 DeepSeek 专有的 thinking / `reasoning_content` 回传语义。**默认统一走 pi-ai**，只有需要 DeepSeek 官方 wire 语义时才挂它，且不要同时把同一厂商挂两遍。
 
-接 adapter 的第一步仍然是发一张截图做连通性测试，确认模型真的收到了图再跑题——声明正确但端点不支持图，只会在跑题中途失败。
+#### 首轮选定的模型：`Qwen2.5-VL-7B-Instruct`
+
+已核实的事实（Hugging Face `Qwen/Qwen2.5-VL-7B-Instruct`）：
+
+| 项 | 值 |
+| --- | --- |
+| 许可 | Apache-2.0，**非 gated**，可自托管 |
+| 上下文 | `max_position_embeddings = 128000` |
+| 视觉切块 | `patch_size = 14`，`spatial_merge_size = 2`，即 **28 px 一个视觉 token** |
+| 预处理上限 | `min_pixels = 3136`，`max_pixels = 12845056`（约 3584×3584） |
+
+由此得到的三条实现约束：
+
+- 它是**视觉模型**，所以首轮直接用 `observation=screenshot`，route 上必须声明 `input: [text, image]`（或 route 级 `defaultInput`）。
+- 1920×1080 远低于 `max_pixels`，**不会**被预处理自动缩小，视觉 token 要按全尺寸算——见 6.4 的预算表。
+- 端点地址与密钥待提供。是否真支持图像仍要靠接图连通性测试确认，**不要凭型号名假设**：声明正确但端点不支持图，只会在跑题中途才炸。
+
+顺带一条通用警告：不要为了「能跑截图」给纯文本型号硬写 `input: [text, image]`。dsh 允许你这么声明，但请求会被端点以 400 拒绝，而图片此时已进入持久化历史，会把整个会话卡死在必然失败的重试上。dsh 出厂 catalog 里的 `deepseek-v4-flash` / `deepseek-v4-pro` 就都没有声明 `image`，属于纯文本型号。
 
 ### 6.4 截图格式与数量上限（dsh 会静默丢图）
 
@@ -334,6 +370,29 @@ dsh 对图像有两道上限，撞上了不会报错而是降级，必须按这�
 - 截图历史上限 20 张由**平台侧**裁剪并写进 `trace.jsonl`，记录每步实际送入的张数。不要依赖 dsh 的静默 offload——它不记事件，会让 trace 声称送了 20 张而模型只看到几张。
 
 本阶段不必做 chunked folding。
+
+#### 真正的瓶颈是模型上下文，不是 dsh 的 20 MiB
+
+对 `Qwen2.5-VL-7B-Instruct`（28 px 一个视觉 token，见 6.3）估算 1920×1080 一张截图：
+
+```text
+smart_resize 到 28 的整数倍：1920→1932，1080→1092
+视觉 token ≈ (1932/28) × (1092/28) = 69 × 39 ≈ 2,700 / 张
+```
+
+两道上限的先后顺序因此是：
+
+| 约束 | 20 张 1920×1080 的用量 | 是否触顶 |
+| --- | --- | --- |
+| dsh `maxRequestImageBytes`（20 MiB base64） | JPEG 约 5–13 MB | 不触顶 |
+| 模型上下文（128K） | 约 54K 视觉 token | 不触顶 |
+| vLLM `--max-model-len`（**取决于显存**） | 同上 54K | **很可能触顶** |
+
+结论与要求：
+
+- **`--max-model-len` 必须显式设够**。7B 模型在单张 24 GB 卡上按默认参数常被压到 32K 左右，那样 20 张截图（约 54K）根本放不进去，会在跑题中途报上下文超限。走 `endpoint_kind=local` 时 `doctor` 要把端点实际的 `max_model_len` 读出来核对；容量不够就**下调截图历史深度**，别让它到跑题时才炸。
+- 32K 可用上下文大约只能放 **8–10 张** 截图（还要留给文本与工具定义），所以历史深度必须是配置项而不是写死的 20。
+- 如果为省显存下采样截图（例如 1280×720 约 1,200 token/张），**必须把模型返回的坐标按缩放比映射回原图**再执行——协议用的是像素坐标（见第 4 节）。漏了这步点击会系统性偏移，而且表现为「模型能力差」，极难排查。
 
 ---
 
@@ -379,7 +438,7 @@ evaluator  exact_match
 4. `run` / `report` / `prune` / `doctor`
 5. pytest（fake 路径 + 失败分类 + unsupported 分支）
 6. `.github/workflows/ci.yml`
-7. DeepSeek Harness adapter 骨架、`harness/desktop_mcp.py`、`configs/dsh/osworld_gui_only.cordis.yml`、OSWorld adapter（无资源则 skip 真跑）
+7. DeepSeek Harness adapter 骨架、`harness/desktop_mcp.py`、`configs/dsh/osworld.cordis.yml`、OSWorld adapter（无资源则 skip 真跑）
 
 ---
 

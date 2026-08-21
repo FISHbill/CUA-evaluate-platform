@@ -140,7 +140,7 @@ Agent = Model + Harness + Action/Observation Protocol
 
 - `model`: `backend`（`dummy` / `openai_compat`）、`endpoint_kind`（`api` / `local`）、名称、温度、max tokens、thinking 开关
 - `harness`: 本阶段枚举 `stub` / `deepseek_harness`；以后可扩 `openai_computer`、`anthropic_computer`、`openclaw`、`agent_s3`（标识符统一 snake_case）
-- `protocol`: `observation` / `guest_actions` / `harness_bash` 三个独立开关，取值见 [REQUIREMENTS.md](./REQUIREMENTS.md) 第 6.3 节
+- `protocol`: `observation` / `guest_actions` / `guest_shell` / `harness_shell` 四个独立开关，取值见 [REQUIREMENTS.md](./REQUIREMENTS.md) 第 6.3 节
 - `limits`: `max_steps`（默认 50）/ `max_turns` / wall-clock timeout
 
 Qwen-CUA 论文的主设定是 **只看截图、只键鼠**。平台必须能强制这个协议，也必须能跑「GUI+Bash」消融（MyPCBench 已有对照）。注意本项目的「禁 bash」指禁止绕过图形界面调软件 API，agent 在桌面 VM 里开终端打字仍属合法键鼠操作。
@@ -281,9 +281,9 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 | 项 | 确认值 |
 | --- | --- |
 | 第一期范围 | Cursor VM 做阶段 0（fake+dummy）；真实推理验证 = OSWorld **1 题** + 多模态模型 + DeepSeek Harness |
-| 协议 | 观测只给截图；桌面动作只给键鼠（guest 内开终端打字合法）；harness bash 关闭 |
+| 协议 | 四开关；首轮 `observation=screenshot` + `guest_shell=true`；dsh 宿主 bash 保持关闭 |
 | 用户界面 | 仅 CLI |
-| 模型 | dummy 仅平台自测；真实验证走 OpenAI 兼容端点上的多模态模型，接口厂商中立，`api` / `local` 两类 route |
+| 模型 | dummy 仅平台自测；真实验证走 OpenAI 兼容端点，接口厂商中立，`api` / `local` 两类 route；首轮 `Qwen2.5-VL-7B-Instruct` |
 | 计算后端 | 实现 `local_linux`；预留 `windows_pc` / `cloud_single` / `small_cluster` / `gpu_cluster` |
 | 存储 | 本地目录，无数据库；`artifact_retention_days` 默认 14 |
 | 指标 | 阶段 1 只记 OSWorld `success_rate`；逐题 0.0–1.0，聚合用百分数 |
