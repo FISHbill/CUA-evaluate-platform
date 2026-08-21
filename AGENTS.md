@@ -371,6 +371,8 @@ evaluator  exact_match
 
 ## 8. 实现顺序（一次做完再停）
 
+逐条的任务拆解、完成判据与验证方式见 [docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md)。下面是粗粒度顺序：
+
 1. `pyproject.toml`（含 6.1 的 `[tool.uv] prerelease`）+ CLI help
 2. `errors.py` + schema（compute_backend / harness 枚举、`protocol` 三开关、`limits`、`endpoint_kind`）与两份实验 YAML
 3. dummy + stub + fake bench

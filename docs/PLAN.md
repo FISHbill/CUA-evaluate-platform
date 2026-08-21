@@ -298,4 +298,4 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 
 ## 9. 下一步
 
-按 [AGENTS.md](../AGENTS.md) 在 Cursor VM 实现阶段 0。真实「多模态模型 + DeepSeek Harness + OSWorld 1 题」按最小资源探测后再选执行机。
+按 [AGENTS.md](../AGENTS.md) 在 Cursor VM 实现阶段 0，逐条任务与验收判据见 [EXECUTION_PLAN.md](./EXECUTION_PLAN.md)。真实「多模态模型 + DeepSeek Harness + OSWorld 1 题」按最小资源探测后再选执行机。
