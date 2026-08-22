@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +15,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from cua_eval.errors import ConfigError
-from cua_eval.harness.cordis import load_cordis_yaml
+from cua_eval.harness.cordis import REQUIRED_PLUGINS, load_cordis_yaml
 from cua_eval.schema import OSWORLD_MIN_COMMIT, Experiment, ModelBackend, Observation
 
 OSWORLD_MIN_VCPU = 8
@@ -238,6 +240,140 @@ def probe_openai_compat(base_url: str, timeout_seconds: float = 2.0) -> CheckRes
         )
 
 
+_DSH_INIT_PAYLOAD = (
+    '{"jsonrpc":"2.0","id":"1","method":"initialize",'
+    '"params":{"cwd":"/tmp","provider":"vlm-cloud","model":"openai-compat-vlm"}}\n'
+)
+_DSH_JSONRPC_SERVER = "@deepseek-ai/dsh-sdk-jsonrpc-server"
+
+
+def _jsonrpc_initialize(
+    binary: Path,
+    cordis_path: Path,
+    *,
+    environ: Mapping[str, str],
+    timeout_seconds: float,
+) -> subprocess.CompletedProcess[str]:
+    env = dict(environ)
+    env["DSH_CORDIS_CONFIG"] = str(cordis_path)
+    return subprocess.run(
+        [str(binary)],
+        input=_DSH_INIT_PAYLOAD,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        env=env,
+        check=False,
+    )
+
+
+def _is_plugin_import_error(stderr: str, plugin: str) -> bool:
+    """True when the snapshot cannot import ``plugin`` at all."""
+    if f"Cannot find package '{plugin}'" in stderr:
+        return True
+    return "failed to import loader entry" in stderr and plugin in stderr
+
+
+def _plugins_missing_from_runtime(
+    binary: Path,
+    *,
+    timeout_seconds: float,
+) -> list[str]:
+    """Probe each required plugin *alone*.
+
+    Loading the full OSWorld cordis with several missing plugins collapses
+    stderr to a nameless ``AggregateError``. Adding one plugin on top of the
+    jsonrpc-server entry names the missing package.
+    """
+    missing: list[str] = []
+    for plugin in REQUIRED_PLUGINS:
+        if plugin == _DSH_JSONRPC_SERVER:
+            continue
+        with tempfile.TemporaryDirectory(prefix="cua-eval-dsh-") as tmp:
+            path = Path(tmp) / "cordis.yml"
+            path.write_text(
+                "- id: sdk-jsonrpc-server\n"
+                f"  name: '{_DSH_JSONRPC_SERVER}'\n"
+                "- id: probe\n"
+                f"  name: '{plugin}'\n",
+                encoding="utf-8",
+            )
+            try:
+                proc = _jsonrpc_initialize(
+                    binary,
+                    path,
+                    environ=os.environ,
+                    timeout_seconds=timeout_seconds,
+                )
+            except (subprocess.TimeoutExpired, OSError):
+                missing.append(plugin)
+                continue
+            if _is_plugin_import_error(proc.stderr or "", plugin):
+                missing.append(plugin)
+    return missing
+
+
+def probe_dsh_cordis(
+    cordis_path: Path,
+    *,
+    environ: Mapping[str, str] | None = None,
+    timeout_seconds: float = 6.0,
+) -> CheckResult:
+    """jsonrpc-agent 能否加载这份 cordis。缺 mcp-client / attachment 时必须说清楚。"""
+    try:
+        from deepseek_harness_runtime import bundled_runtime_path
+    except ImportError:
+        return CheckResult(
+            name="dsh_runtime",
+            ok=False,
+            detail="未安装 deepseek-harness-runtime-bin。不要退化成 dummy。",
+        )
+    try:
+        binary = bundled_runtime_path()
+    except FileNotFoundError as exc:
+        return CheckResult(name="dsh_runtime", ok=False, detail=str(exc))
+
+    missing = _plugins_missing_from_runtime(binary, timeout_seconds=timeout_seconds)
+    if missing:
+        return CheckResult(
+            name="dsh_runtime",
+            ok=False,
+            detail=(
+                "当前 deepseek-harness-runtime-bin 的 jsonrpc-agent 快照缺少: "
+                + ", ".join(missing)
+                + "。自备 cordis 仍必须挂它们（AGENTS.md §6.2）；"
+                "换带完整插件集的 runtime 之前不要假装跑过。"
+            ),
+        )
+
+    env = dict(environ if environ is not None else os.environ)
+    try:
+        proc = _jsonrpc_initialize(
+            binary,
+            cordis_path,
+            environ=env,
+            timeout_seconds=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        return CheckResult(
+            name="dsh_runtime",
+            ok=False,
+            detail="dsh-jsonrpc-agent initialize 超时。不要退化成 dummy。",
+        )
+    except OSError as exc:
+        return CheckResult(
+            name="dsh_runtime",
+            ok=False,
+            detail=f"无法启动 dsh-jsonrpc-agent: {exc}。不要退化成 dummy。",
+        )
+    stderr = proc.stderr or ""
+    loaded = "plugin tree failed to load" not in stderr and bool((proc.stdout or "").strip())
+    if loaded:
+        return CheckResult(name="dsh_runtime", ok=True, detail=str(binary))
+    detail = stderr.strip().splitlines()[0] if stderr.strip() else "initialize 失败"
+    return CheckResult(name="dsh_runtime", ok=False, detail=detail[:300])
+
+
 def evaluate_experiment(
     experiment: Experiment,
     *,
@@ -379,6 +515,9 @@ def evaluate_experiment(
             checks.append(
                 CheckResult(name="endpoint", ok=True, detail=f"baseURL={base_url}（未探测）")
             )
+
+    if probe:
+        checks.append(probe_dsh_cordis(cordis_path, environ=env))
     return checks
 
 

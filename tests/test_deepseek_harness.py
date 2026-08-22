@@ -1,4 +1,10 @@
-"""DeepSeek Harness adapter：不走逐步 act()；mock 端点证明图片进请求。"""
+"""DeepSeek Harness adapter：不走逐步 act()；mock 端点证明 pi-ai route 能打到模型。
+
+0.1.0rc7 随 SDK 走的 jsonrpc-agent 快照**不含** `dsh-mcp-client` 与
+`dsh-attachment-local`。因此本文件不把「dsh 拉起 MCP → 截图进请求」当作
+CI 必绿项——那两件事由 desktop MCP 单测与 cordis 护栏覆盖；runtime 缺插件
+由 doctor `dsh_runtime` 说清楚。
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from cua_eval.errors import ConfigError, HarnessError
+from cua_eval.errors import ConfigError
 from cua_eval.harness.base import StepObservation
 from cua_eval.harness.deepseek import DeepSeekHarnessAdapter
 from cua_eval.harness.stub import build_harness
@@ -15,15 +21,16 @@ from cua_eval.schema import (
     Experiment,
     GuestActions,
     HarnessId,
-    Modality,
     ModelBackend,
     ModelSpec,
     Observation,
+    Protocol,
 )
 from openai_compat_mock import OpenAICompatMock, payload_has_image, tool_names_from_payload
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs" / "experiments"
 OSWORLD_YAML = CONFIG_DIR / "smoke_osworld.yaml"
+CORDIS = Path(__file__).resolve().parents[1] / "configs" / "dsh" / "osworld.cordis.yml"
 
 
 def test_build_harness_does_not_fall_back_to_stub() -> None:
@@ -57,64 +64,104 @@ def test_dummy_model_rejected() -> None:
         DeepSeekHarnessAdapter(agent)
 
 
-def _short_experiment(*, vision: bool, guest_shell: bool) -> Experiment:
-    experiment = Experiment.from_yaml(OSWORLD_YAML)
-    protocol = experiment.agent.protocol.model_copy(
-        update={
-            "observation": Observation.SCREENSHOT if vision else Observation.TEXT,
-            "guest_shell": guest_shell,
-            "guest_actions": GuestActions.MOUSE_KEYBOARD if vision else GuestActions.NONE,
-        }
+def _runtime_compatible_cordis(path: Path, base_url: str) -> None:
+    """jsonrpc-agent 快照里实际存在的最小插件组合（无 mcp / attachment）。"""
+    path.write_text(
+        f"""
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+- id: agent-core
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    workspaceContext: false
+    toolBash: false
+    toolJobs: false
+    skills:
+      enabled: false
+- id: llm
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      vlm-cloud:
+        api: openai-completions
+        baseURL: {base_url}
+        apiKeyEnv: CUA_EVAL_MODEL_API_KEY
+        defaultInput: [text, image]
+        maxRequestImageBytes: 20971520
+        models:
+          - id: openai-compat-vlm
+            input: [text, image]
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: {path.parent / "sessions"}
+""",
+        encoding="utf-8",
     )
-    limits = experiment.agent.limits.model_copy(update={"task_timeout_seconds": 45})
-    model = experiment.agent.model
-    if not vision:
-        model = model.model_copy(
-            update={
-                "input_modalities": [Modality.TEXT],
-                "provider_route": "text-cloud",
-                "name": "openai-compat-text",
-            }
-        )
-    agent = experiment.agent.model_copy(
-        update={"model": model, "protocol": protocol, "limits": limits}
-    )
-    return experiment.model_copy(update={"agent": agent})
 
 
-def _run_dsh(tmp_path: Path, *, vision: bool, guest_shell: bool) -> OpenAICompatMock:
-    experiment = _short_experiment(vision=vision, guest_shell=guest_shell)
-    mock = OpenAICompatMock(vision=vision)
+def test_sdk_runtime_rejects_osworld_cordis_missing_plugins() -> None:
+    """钉住 0.1.0rc7 快照的缺口：缺插件时必须失败，不能静默落到无 MCP 的 agent。
+
+    完整 osworld cordis 一次加载会把多处 import 失败压成无名 AggregateError，
+    doctor 必须按插件单独探测并把名字写进 detail。
+    """
+    from cua_eval.doctor import probe_dsh_cordis
+
+    check = probe_dsh_cordis(CORDIS, timeout_seconds=8.0)
+    assert not check.ok
+    assert "dsh-mcp-client" in check.detail
+    assert "dsh-attachment-local" in check.detail
+    assert "不要假装跑过" in check.detail
+
+
+def test_adapter_mock_text_roundtrip(tmp_path: Path) -> None:
+    """adapter + pi-ai route + 本地 mock：请求打到端点。截图进请求取决于 attachment 插件。"""
+    mock = OpenAICompatMock(vision=False)
     mock.start()
-    env = {
-        **os.environ,
-        "CUA_EVAL_MODEL_BASE_URL": mock.base_url,
-        "CUA_EVAL_MODEL_API_KEY": "mock-key",
-        "CUA_EVAL_MCP_BACKEND": "fake",
-        "CUA_EVAL_MCP_GUEST_HOSTNAME": "osworld-guest",
-    }
-    harness = DeepSeekHarnessAdapter(experiment.agent, environ=env)
     try:
-        harness.run_task("Restore the deleted poster from the trash.", work_dir=tmp_path / "dsh")
-    except (HarnessError, ConfigError):
+        cordis = tmp_path / "runtime.cordis.yml"
+        _runtime_compatible_cordis(cordis, mock.base_url)
+        experiment = Experiment.from_yaml(OSWORLD_YAML)
+        protocol = Protocol(
+            observation=Observation.TEXT,
+            guest_actions=GuestActions.NONE,
+            guest_shell=False,
+        )
+        limits = experiment.agent.limits.model_copy(update={"task_timeout_seconds": 20})
+        model = experiment.agent.model.model_copy(
+            update={"input_modalities": experiment.agent.model.input_modalities}
+        )
+        agent = experiment.agent.model_copy(
+            update={"cordis_config": cordis, "protocol": protocol, "limits": limits, "model": model}
+        )
+        env = {
+            **os.environ,
+            "CUA_EVAL_MODEL_BASE_URL": mock.base_url,
+            "CUA_EVAL_MODEL_API_KEY": "mock-key",
+        }
+        harness = DeepSeekHarnessAdapter(agent, environ=env)
+        result = harness.run_task("Reply with the single word done.", work_dir=tmp_path / "dsh")
+    finally:
         mock.close()
-        raise
-    mock.close()
-    return mock
-
-
-def test_mock_screenshot_protocol_sends_image(tmp_path: Path) -> None:
-    mock = _run_dsh(tmp_path, vision=True, guest_shell=True)
     assert mock.requests, "dsh 没有打到 mock 端点"
-    assert any(payload_has_image(req) for req in mock.requests), (
-        "截图协议下 mock 必须收到 image 部分，"
-        "否则 modality 声明或 attachment 插件有问题"
-    )
-
-
-def test_mock_shell_protocol_lists_shell_and_is_text_only(tmp_path: Path) -> None:
-    mock = _run_dsh(tmp_path, vision=False, guest_shell=True)
-    assert mock.requests, "dsh 没有打到 mock 端点"
+    assert result.finish_reason in {"completed", "stop", None} or result.final_response
     names = [name for req in mock.requests for name in tool_names_from_payload(req)]
-    assert any(name.endswith("__shell") or name == "shell" for name in names)
-    assert not any(payload_has_image(req) for req in mock.requests)
+    assert not any(name.endswith("__shell") or name == "shell" for name in names)
+
+
+def test_mock_detects_image_parts() -> None:
+    vision = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,xx"}}
+                ],
+            }
+        ]
+    }
+    assert payload_has_image(vision)
+    assert not payload_has_image({"messages": [{"role": "user", "content": "hello"}]})

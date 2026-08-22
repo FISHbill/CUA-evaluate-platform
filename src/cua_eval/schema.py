@@ -390,9 +390,33 @@ class Experiment(_Base):
         if not isinstance(raw, dict):
             raise ConfigError(f"{p} 的顶层必须是映射，得到 {type(raw).__name__}")
         try:
-            return cls.model_validate(raw)
+            experiment = cls.model_validate(raw)
         except ValueError as exc:
             raise ConfigError(f"实验配置 {p} 不合法:\n{exc}") from exc
+        return experiment._resolve_relative_paths(p)
+
+    def _resolve_relative_paths(self, yaml_path: Path) -> Experiment:
+        """相对路径相对 YAML 所在仓库解析，避免 `chdir` 后找不到 cordis。"""
+        cordis = self.agent.cordis_config
+        if cordis is None:
+            return self
+        resolved = _resolve_repo_path(yaml_path, cordis)
+        if resolved == cordis:
+            return self
+        return self.model_copy(
+            update={"agent": self.agent.model_copy(update={"cordis_config": resolved})}
+        )
+
+
+def _resolve_repo_path(yaml_path: Path, relative: Path) -> Path:
+    if relative.is_absolute():
+        return relative
+    search_roots = [Path.cwd(), yaml_path.resolve().parent, *yaml_path.resolve().parents]
+    for root in search_roots:
+        candidate = root / relative
+        if candidate.is_file():
+            return candidate.resolve()
+    return relative
 
 
 class RunRecord(_Base):

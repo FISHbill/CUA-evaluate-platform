@@ -14,9 +14,6 @@
   config:
     maxTokensAsSuccess: false
 
-- id: credentials
-  name: '@deepseek-ai/dsh-credentials-local'
-
 - id: llm
   name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
