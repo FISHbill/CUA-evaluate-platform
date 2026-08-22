@@ -261,6 +261,10 @@ def materialize_cordis(
             "CUA_EVAL_MCP_ACTION_LOG",
             "CUA_EVAL_MCP_NATIVE_WIDTH",
             "CUA_EVAL_MCP_NATIVE_HEIGHT",
+            "CUA_EVAL_OSWORLD_ROOT",
+            "CUA_EVAL_OSWORLD_VM_IP",
+            "CUA_EVAL_OSWORLD_SERVER_PORT",
+            "PYTHONPATH",
         ):
             if key in env:
                 plugin_env[key] = env[key]

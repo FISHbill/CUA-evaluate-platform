@@ -397,6 +397,12 @@ def evaluate_experiment(
                 ),
             )
         )
+        from cua_eval.benches.osworld import collect_preflight, default_osworld_root
+
+        for item in collect_preflight(default_osworld_root(), pin or OSWORLD_MIN_COMMIT):
+            if item.name == "/dev/kvm":
+                continue
+            checks.append(CheckResult(name=item.name, ok=item.ok, detail=item.detail))
 
     if model.backend is ModelBackend.DUMMY:
         checks.append(

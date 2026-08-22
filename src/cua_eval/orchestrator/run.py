@@ -64,6 +64,19 @@ class TracingHarness:
         self._writer.append_trace(event)
         return completion
 
+    def run_task(
+        self,
+        instruction: str,
+        *,
+        work_dir: Path,
+        extra_env: dict[str, str] | None = None,
+    ) -> Any:
+        """dsh 整段循环。截图与动作由 desktop MCP 落在 guest 侧。"""
+        run = getattr(self._inner, "run_task", None)
+        if not callable(run):
+            raise ConfigError("当前 harness 不支持 run_task()；deepseek_harness 才走这条路径。")
+        return run(instruction, work_dir=work_dir, extra_env=extra_env)
+
 
 def _trial_from_infra(task_id: str, exc: InfraError) -> TrialResult:
     return TrialResult(
@@ -109,6 +122,11 @@ def _run_one_task(
             harness = build_harness(experiment.agent)
         agent = TracingHarness(harness, writer, experiment)
         raw = bench.run_trial(task_id, agent)
+        if raw.raw_artifacts:
+            for name, body in raw.raw_artifacts.items():
+                dest = writer.task_dir / "raw" / name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(body, encoding="utf-8")
         trial = bench.normalize(raw)
     except ModelError as exc:
         trial = _trial_from_model(task_id, exc)

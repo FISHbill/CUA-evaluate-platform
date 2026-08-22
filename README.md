@@ -2,7 +2,7 @@
 
 用于评测 **模型 + harness** 组成的 Computer-Use Agent（CUA）在多个公开 benchmark 上的表现。开发环境以 Linux 为主。
 
-当前进度：**阶段 0（M0–M3）完成**；本分支继续交付 **M4**（DeepSeek Harness adapter + desktop MCP + 自备 cordis）。阶段 1 的 OSWorld 真跑尚未接入（M5/M6，需换执行机）。
+当前进度：**阶段 0（M0–M3）完成**；**M4**（dsh / desktop MCP / cordis）与 **M5**（OSWorld adapter 代码）已在本分支落地。阶段 1 的真实单题推理验证是 **M6**，必须换执行机：本开发 VM 没有 Docker/KVM，adapter **不会**下载 qcow2，缺项时 `doctor` / `run` 失败，不退化成 dummy。
 
 阶段 1 走**外部 OpenAI 兼容 API**，型号由 YAML `model.name` 填写，**不锁定**某一代号。本开发 VM 不足以真跑 OSWorld。
 

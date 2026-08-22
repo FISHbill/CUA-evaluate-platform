@@ -57,7 +57,7 @@ plugins = ["pydantic.mypy"]
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["PIL", "PIL.*", "deepseek_harness", "deepseek_harness.*", "deepseek_harness_runtime", "deepseek_harness_runtime.*"]
+module = ["PIL", "PIL.*", "deepseek_harness", "deepseek_harness.*", "deepseek_harness_runtime", "deepseek_harness_runtime.*", "desktop_env", "desktop_env.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

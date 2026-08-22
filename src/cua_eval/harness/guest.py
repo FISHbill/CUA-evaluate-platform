@@ -140,12 +140,15 @@ def build_guest(environ: dict[str, str] | None = None) -> GuestDesktop:
     backend = env.get("CUA_EVAL_MCP_BACKEND", "fake")
     if backend == "fake":
         return FakeGuest.from_env(env)
+    if backend == "osworld":
+        from cua_eval.benches.osworld_guest import OSWorldGuest
+
+        return OSWorldGuest.from_env(env)
     from cua_eval.errors import ConfigError
 
     raise ConfigError(
-        f"CUA_EVAL_MCP_BACKEND={backend} 尚未接入。"
-        "真实桌面 guest 由 OSWorld adapter（M5）提供；"
-        "当前请用 fake backend 做 MCP 自测。"
+        f"CUA_EVAL_MCP_BACKEND={backend} 不是 fake / osworld。"
+        "不要退化成宿主机 shell。"
     )
 
 

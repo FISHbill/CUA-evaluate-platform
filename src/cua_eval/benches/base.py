@@ -23,6 +23,7 @@ class RawResult:
     error_message: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    raw_artifacts: dict[str, str] | None = None
 
 
 @runtime_checkable
@@ -51,7 +52,7 @@ def get_bench(experiment: Experiment) -> BenchAdapter:
         case BenchId.FAKE:
             return FakeBench(experiment)
         case BenchId.OSWORLD_VERIFIED:
-            return OSWorldBench()
+            return OSWorldBench(experiment)
         case BenchId.MACOS:
             return MacOSBench()
         case BenchId.WINDOWS:

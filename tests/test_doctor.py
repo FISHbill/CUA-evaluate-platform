@@ -77,6 +77,10 @@ def test_osworld_without_endpoint_does_not_fall_back_to_dummy() -> None:
     assert not checks["endpoint"].ok
     assert "dummy" in checks["api_key"].detail.lower()
     assert "dummy" in checks["endpoint"].detail.lower()
+    assert not checks["osworld_checkout"].ok
+    assert not checks["osworld_qcow2"].ok
+    assert "qcow2" in checks["osworld_qcow2"].detail
+    assert checks["osworld_image"].ok is False
 
 
 def test_text_only_route_rejected_for_screenshot(tmp_path: Path) -> None:
