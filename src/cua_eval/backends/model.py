@@ -3,8 +3,9 @@
 `dummy` 是平台自测用的假模型：不读截图，返回固定动作并以 `terminate` 收尾。
 它的分数**不代表任何模型能力**。
 
-`openai_compat` 是阶段 1 的真路径：任意 OpenAI 兼容端点。M1 尚未接线；
-构建时直接失败，**不得**退化成 dummy。
+`openai_compat` 是阶段 1 的真路径：任意 OpenAI 兼容端点。本阶段由
+DeepSeek Harness 经 cordis route 直连该端点，不经过本文件的 `ModelClient.complete`。
+构建 `build_model(openai_compat)` 仍然失败，**不得**退化成 dummy。
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ def build_model(spec: ModelSpec) -> ModelClient:
     raise ConfigError(
         f"model.backend={spec.backend.value} 尚未接入。"
         "阶段 0 请用 dummy（configs/experiments/smoke_fake.yaml）；"
-        "openai_compat 随 DeepSeek Harness 在 M4 接入。"
+        "openai_compat 由 DeepSeek Harness 经 cordis route 直连，不走 ModelClient。"
         "无端点时不得退化成 dummy 还宣称已经验证过模型。"
     )
 

@@ -69,12 +69,14 @@ def test_dummy_is_not_claimed_verified() -> None:
     assert "不能当成已验证" in model.detail
 
 
-def test_osworld_without_cordis_does_not_fall_back_to_dummy() -> None:
+def test_osworld_without_endpoint_does_not_fall_back_to_dummy() -> None:
     experiment = Experiment.from_yaml(CONFIG_DIR / "smoke_osworld.yaml")
     checks = {c.name: c for c in evaluate_experiment(experiment, environ={}, probe=False)}
-    assert not checks["cordis"].ok
-    assert "dummy" in checks["cordis"].detail.lower()
+    assert checks["cordis"].ok
     assert not checks["api_key"].ok
+    assert not checks["endpoint"].ok
+    assert "dummy" in checks["api_key"].detail.lower()
+    assert "dummy" in checks["endpoint"].detail.lower()
 
 
 def test_text_only_route_rejected_for_screenshot(tmp_path: Path) -> None:

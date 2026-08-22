@@ -12,8 +12,8 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-import yaml
-
+from cua_eval.errors import ConfigError
+from cua_eval.harness.cordis import load_cordis_yaml
 from cua_eval.schema import OSWORLD_MIN_COMMIT, Experiment, ModelBackend, Observation
 
 OSWORLD_MIN_VCPU = 8
@@ -339,9 +339,9 @@ def evaluate_experiment(
         return checks
 
     try:
-        raw = yaml.safe_load(cordis_path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError) as exc:
-        checks.append(CheckResult(name="cordis", ok=False, detail=f"读 cordis 失败: {exc}"))
+        raw = load_cordis_yaml(cordis_path, environ=env)
+    except ConfigError as exc:
+        checks.append(CheckResult(name="cordis", ok=False, detail=str(exc)))
         return checks
 
     checks.append(CheckResult(name="cordis", ok=True, detail=str(cordis_path)))

@@ -16,13 +16,19 @@ class StubHarness:
         return self.model.complete(observation)
 
 
-def build_harness(spec: AgentSpec, model: ModelClient) -> Harness:
+def build_harness(spec: AgentSpec, model: ModelClient | None = None) -> Harness:
     if spec.harness is HarnessId.STUB:
+        if model is None:
+            raise ConfigError("stub harness 需要 ModelClient")
         return StubHarness(model)
+    if spec.harness is HarnessId.DEEPSEEK_HARNESS:
+        from cua_eval.harness.deepseek import DeepSeekHarnessAdapter
+
+        return DeepSeekHarnessAdapter(spec)
     raise ConfigError(
         f"harness={spec.harness.value} 尚未接入。"
         "阶段 0 请用 stub（configs/experiments/smoke_fake.yaml）；"
-        "deepseek_harness 由 M4 交付，不要退化成 stub。"
+        "不要退化成 stub 去跑 deepseek_harness。"
     )
 
 

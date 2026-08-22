@@ -1,0 +1,111 @@
+# 自备 dsh 插件组合。禁止使用 SDK 零配置默认文件：那份会挂
+# dsh-bash-local / dsh-subprocess-local / dsh-fs-local，把评测宿主机的
+# shell 和文件系统交给模型——既改不动 guest 状态，又是打分完整性事故。
+#
+# guest 内的 bash 由本仓库 desktop MCP 的 shell 工具提供（走 OSWorld
+# PythonController.run_bash_script）。即使 protocol.guest_shell=true 也不挂
+# 宿主 bash。
+#
+# 端点地址用环境变量注入；未设置时保持 <unconfigured>，doctor 报「端点未配置」
+# 并非 0 退出，不得退化成 dummy。密钥只从环境变量读。
+
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  config:
+    maxTokensAsSuccess: false
+
+- id: credentials
+  name: '@deepseek-ai/dsh-credentials-local'
+
+- id: llm
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      # 云端 OpenAI 兼容（endpoint_kind: api）。换厂商只加一条 route。
+      vlm-cloud:
+        api: openai-completions
+        baseURL: !!js process.env.CUA_EVAL_MODEL_BASE_URL ?? '<unconfigured>'
+        apiKeyEnv: CUA_EVAL_MODEL_API_KEY
+        defaultInput: [text, image]
+        maxRequestImageBytes: 20971520
+        defaultContextWindow: 128000
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+          supportsStore: false
+          supportsReasoningEffort: false
+        models:
+          - id: openai-compat-vlm
+            input: [text, image]
+      # 本地 vLLM / 集群网关（endpoint_kind: local）。
+      vlm-local:
+        api: openai-completions
+        baseURL: !!js process.env.CUA_EVAL_MODEL_LOCAL_BASE_URL ?? '<unconfigured>'
+        apiKeyEnv: CUA_EVAL_MODEL_API_KEY
+        defaultInput: [text, image]
+        maxRequestImageBytes: 20971520
+        defaultContextWindow: 128000
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+          supportsStore: false
+          supportsReasoningEffort: false
+        models:
+          - id: openai-compat-vlm
+            input: [text, image]
+      # 纯文本对照列：不要声明 image。observation=text 的实验走这条 route。
+      text-cloud:
+        api: openai-completions
+        baseURL: !!js process.env.CUA_EVAL_MODEL_BASE_URL ?? '<unconfigured>'
+        apiKeyEnv: CUA_EVAL_MODEL_API_KEY
+        models:
+          - id: openai-compat-text
+
+- id: attachments
+  name: '@deepseek-ai/dsh-attachment-local'
+  config:
+    maxImageDimension: 2000
+    maxMessageImageBytes: 20971520
+
+- id: agent-core
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+    maxParallelToolCalls: 1
+    persona: |
+      You are a computer-use agent controlling a Linux desktop VM.
+      Use the desktop MCP tools. Mouse coordinates are pixels on the 1920x1080
+      screenshot. Shell, when available, runs inside the guest VM, not on the
+      evaluation host. Do not assume host filesystem access.
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
+    compression: none
+
+- id: session-checkpoints
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+- id: desktop-mcp
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: desktop
+    transport: stdio
+    command: python
+    args: ['-m', 'cua_eval.harness.desktop_mcp']
+    failOnStartupError: true
+    reconnect:
+      enabled: false
+    env:
+      CUA_EVAL_MCP_OBSERVATION: !!js process.env.CUA_EVAL_MCP_OBSERVATION ?? 'screenshot'
+      CUA_EVAL_MCP_GUEST_ACTIONS: !!js process.env.CUA_EVAL_MCP_GUEST_ACTIONS ?? 'mouse_keyboard'
+      CUA_EVAL_MCP_GUEST_SHELL: !!js process.env.CUA_EVAL_MCP_GUEST_SHELL ?? 'true'
+      CUA_EVAL_MCP_MAX_SCREENSHOT_HISTORY: !!js process.env.CUA_EVAL_MCP_MAX_SCREENSHOT_HISTORY ?? '20'
+      CUA_EVAL_MCP_BACKEND: !!js process.env.CUA_EVAL_MCP_BACKEND ?? 'fake'

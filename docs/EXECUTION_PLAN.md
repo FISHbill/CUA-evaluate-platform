@@ -8,7 +8,7 @@
 
 ## 1. 里程碑总览
 
-进度：**M0 与 M1 已完成**。本 PR 继续交付 **M2**（report / prune / doctor）与 **M3**（测试套件 + CI）。下一步是 M4（dsh 接入）。
+进度：**M0–M3 已完成**。本 PR 继续交付 **M4**（dsh 接入：desktop MCP、自备 cordis、adapter、mock 冒烟）。
 
 | 里程碑 | 内容 | 执行机 |
 | --- | --- | --- |

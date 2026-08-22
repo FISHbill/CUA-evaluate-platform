@@ -78,8 +78,7 @@ def test_osworld_smoke_does_not_fall_back_to_dummy(
     runner = CliRunner()
     result = runner.invoke(app, ["run", "-c", str(OSWORLD_YAML)], catch_exceptions=False)
     assert result.exit_code == 1, result.output
-    assert "尚未接入" in result.output
-    assert "不得退化" in result.output
+    assert "adapter 由 M5 交付" in result.output
     assert not _run_dirs(tmp_path / "results")
 
 

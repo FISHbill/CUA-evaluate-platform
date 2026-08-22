@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from cua_eval import __version__
 from cua_eval.actions import validate_against_protocol
 from cua_eval.backends.compute import run_job
-from cua_eval.backends.model import ModelClient, build_model
+from cua_eval.backends.model import build_model
 from cua_eval.benches.base import BenchAdapter, get_bench
 from cua_eval.errors import ConfigError, InfraError, ModelError, UnsupportedBenchError
 from cua_eval.harness.base import Completion, Harness, StepObservation
 from cua_eval.harness.stub import build_harness
-from cua_eval.schema import Experiment, FailureClass, RunRecord, TrialResult
+from cua_eval.schema import (
+    Experiment,
+    FailureClass,
+    HarnessId,
+    ModelBackend,
+    RunRecord,
+    TrialResult,
+)
 from cua_eval.store.results import ResultStore, StartedRun, TaskWriter
 
 
@@ -25,12 +33,10 @@ class TracingHarness:
         inner: Harness,
         writer: TaskWriter,
         experiment: Experiment,
-        model: ModelClient,
     ) -> None:
         self._inner = inner
         self._writer = writer
         self._experiment = experiment
-        self._model = model
         self._history: list[str] = []
 
     def act(self, observation: StepObservation) -> Completion:
@@ -53,7 +59,7 @@ class TracingHarness:
             "action": completion.action.model_dump(mode="json"),
             "input_tokens": completion.input_tokens,
             "output_tokens": completion.output_tokens,
-            "model_backend": self._model.spec.backend.value,
+            "model_backend": self._experiment.agent.model.backend.value,
         }
         self._writer.append_trace(event)
         return completion
@@ -96,9 +102,12 @@ def _run_one_task(
         ),
     }
     try:
-        model = build_model(experiment.agent.model)
-        harness = build_harness(experiment.agent, model)
-        agent = TracingHarness(harness, writer, experiment, model)
+        if experiment.agent.harness is HarnessId.STUB:
+            model = build_model(experiment.agent.model)
+            harness = build_harness(experiment.agent, model)
+        else:
+            harness = build_harness(experiment.agent)
+        agent = TracingHarness(harness, writer, experiment)
         raw = bench.run_trial(task_id, agent)
         trial = bench.normalize(raw)
     except ModelError as exc:
@@ -115,11 +124,33 @@ def _run_one_task(
 
 def _preflight(experiment: Experiment) -> BenchAdapter:
     """未实现的模型 / harness / bench 必须在写 results/ 之前失败，且不得退化成 dummy。"""
-    model = build_model(experiment.agent.model)
-    build_harness(experiment.agent, model)
+    if experiment.agent.harness is HarnessId.STUB:
+        model = build_model(experiment.agent.model)
+        build_harness(experiment.agent, model)
+    elif experiment.agent.harness is HarnessId.DEEPSEEK_HARNESS:
+        _require_deepseek_ready(experiment)
+        build_harness(experiment.agent)
+    else:
+        raise ConfigError(
+            f"harness={experiment.agent.harness.value} 尚未接入。不要退化成 stub / dummy。"
+        )
     bench = get_bench(experiment)
     bench.prepare()
     return bench
+
+
+def _require_deepseek_ready(experiment: Experiment) -> None:
+    if experiment.agent.model.backend is ModelBackend.DUMMY:
+        raise ConfigError(
+            "deepseek_harness 不能配 dummy。无端点时不要退化成 dummy 还宣称已经验证过模型。"
+        )
+    cordis = experiment.agent.cordis_config
+    if cordis is None or not Path(cordis).is_file():
+        raise ConfigError(
+            f"cordis_config 不存在: {cordis}。"
+            "禁止使用 dsh 零配置默认组合（那会挂上宿主机 bash）。"
+            "无端点时不要退化成 dummy。"
+        )
 
 
 def _run_in_process(experiment: Experiment) -> RunRecord:
