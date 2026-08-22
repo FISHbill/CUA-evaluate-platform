@@ -1,9 +1,4 @@
-"""`cua-eval` 命令行入口。
-
-M0 只交付骨架：四个子命令都在 `--help` 里，但只有配置校验是真的。未实现的执行
-链路一律以退出码 2 明确说明由哪个里程碑交付——**不要**让它静默成功，那会让人
-以为跑过了。里程碑划分见 docs/EXECUTION_PLAN.md。
-"""
+"""`cua-eval` 命令行入口。"""
 
 from __future__ import annotations
 
@@ -13,7 +8,8 @@ from typing import Annotated
 import typer
 
 from cua_eval import __version__
-from cua_eval.errors import ConfigError
+from cua_eval.errors import ConfigError, UnsupportedBenchError, UnsupportedComputeBackend
+from cua_eval.orchestrator.run import run_experiment
 from cua_eval.schema import Experiment
 
 app = typer.Typer(
@@ -68,29 +64,36 @@ def run(
         typer.Option("-c", "--config", exists=True, dir_okay=False, help="实验配置 YAML"),
     ],
 ) -> None:
-    """跑一次实验。
-
-    M0 阶段只做配置校验：不自洽的配置在这里就该失败，而不是烧掉几十分钟桌面 VM
-    时间之后才发现。
-    """
+    """跑一次实验。"""
     try:
         experiment = Experiment.from_yaml(config)
+        record = run_experiment(experiment)
     except ConfigError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
+    except UnsupportedComputeBackend as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    except UnsupportedBenchError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
 
-    key = experiment.evaluation_key()
-    typer.echo(f"配置校验通过: {config}")
-    typer.echo(f"  实验名        {experiment.name}")
-    typer.echo(f"  bench         {key.bench} @ {key.bench_version}")
-    typer.echo(f"  任务          {len(experiment.task_ids)} 个")
-    typer.echo(f"  模型          {key.model} ({key.endpoint_kind})")
-    typer.echo(f"  harness       {key.harness}")
-    typer.echo(f"  协议          {key.protocol}")
-    typer.echo(f"  计算后端      {key.compute_backend}")
-    typer.echo(f"  步数上限      {experiment.agent.limits.max_steps}")
-    typer.echo(f"  截图历史深度  {experiment.agent.limits.max_screenshot_history}")
-    _not_implemented("run", "M1")
+    key = record.evaluation_key()
+    typer.echo(f"run_id         {record.run_id}")
+    typer.echo(f"实验名         {experiment.name}")
+    typer.echo(f"bench          {key.bench} @ {key.bench_version}")
+    typer.echo(f"模型           {key.model} ({key.endpoint_kind})")
+    typer.echo(f"harness        {key.harness}")
+    typer.echo(f"协议           {key.protocol}")
+    typer.echo(f"计算后端       {key.compute_backend}")
+    for trial in record.trials:
+        score = "—" if trial.score is None else f"{trial.score:.3f}"
+        typer.echo(
+            f"  {trial.task_id}: {trial.failure_class.value}  score={score}  steps={trial.steps}"
+        )
+        if trial.failure_class.value == "ok" and experiment.agent.model.backend.value == "dummy":
+            typer.echo("  注：dummy 的分数不是模型能力，只说明平台链路通了。")
+    typer.echo(f"结果目录       {experiment.results_dir / record.run_id}")
 
 
 @app.command()

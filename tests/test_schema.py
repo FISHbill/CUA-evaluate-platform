@@ -92,7 +92,7 @@ def _dummy_model(**overrides: object) -> ModelSpec:
 def _openai_model(**overrides: object) -> ModelSpec:
     payload: dict[str, object] = {
         "backend": ModelBackend.OPENAI_COMPAT,
-        "name": "Qwen2.5-VL-7B-Instruct",
+        "name": "unit-test-vlm",
         "endpoint_kind": EndpointKind.API,
         "provider_route": "vlm-cloud",
         "api_key_env": "CUA_EVAL_MODEL_API_KEY",
@@ -334,7 +334,7 @@ class TestExperiment:
             },
         )
         key = experiment.evaluation_key()
-        assert key.model == "Qwen2.5-VL-7B-Instruct"
+        assert key.model == "unit-test-vlm"
         assert key.endpoint_kind == "api"
         assert key.harness == "deepseek_harness"
         assert "guest_shell" in key.protocol

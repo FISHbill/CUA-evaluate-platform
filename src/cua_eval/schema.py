@@ -134,7 +134,7 @@ class Limits(_Base):
     """运行限制。
 
     `max_screenshot_history` 是配置项而不是写死的 20：一张 1920×1080 截图对
-    Qwen2.5-VL 约 2,700 视觉 token，20 张约 54K，自托管时很容易超过推理服务的
+    常见 7B VLM 约 2,700 视觉 token，20 张约 54K，自托管时很容易超过推理服务的
     `--max-model-len`。见 AGENTS.md 6.4。
     """
 

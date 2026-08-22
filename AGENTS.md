@@ -10,7 +10,7 @@
 
 搭建 Linux 上的 CUA 评测平台：比较 **模型 + harness** 在公开 bench 上的表现。结果表形态对齐 Qwen-CUA Table 1（单指标，或 `binary / partial`、`task success / ASR`）。
 
-当前交付：**阶段 0 必须在 Cursor VM 完成**（fake + dummy，无 GPU）。**阶段 1** 是真实 CUA 推理验证：OSWorld-Verified **1 题** + **`Qwen2.5-VL-7B-Instruct`**（首轮选定；接口不绑定厂商）+ **DeepSeek Harness**。
+当前交付：**阶段 0 必须在 Cursor VM 完成**（fake + dummy，无 GPU）。**阶段 1** 是真实 CUA 推理验证：OSWorld-Verified **1 题** + **任意 OpenAI 兼容端点上的视觉模型**（型号由 YAML 填写，不锁定；原候选 Qwen2.5 视觉系列可能改为 Qwen 3）+ **DeepSeek Harness**。
 
 Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker/qemu、`/dev/kvm` 普通用户不可读，低于 [docs/RESOURCES.md](docs/RESOURCES.md) 第 6.1 节的 8 vCPU / 32 GB）。因此在该 VM 上只实现 adapter 与 `doctor` 探测，真正跑题放到后续选定的执行机。
 
@@ -25,7 +25,7 @@ Cursor 开发 VM 已实测**不足以**跑阶段 1（4 vCPU / 15 GB、无 docker
 ### 阶段 1 完成标准（真实推理验证）
 
 - OSWorld-Verified **1 题**（`5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57`），`num_envs=1`，`max_steps=50`
-- Agent = **任意 OpenAI 兼容端点上的模型** + **DeepSeek Harness**；首轮选定 **`Qwen2.5-VL-7B-Instruct`**
+- Agent = **任意 OpenAI 兼容端点上的模型** + **DeepSeek Harness**；型号由 YAML `model.name` 填写，**不锁定**某一代号
 - 模型接入是**厂商中立的 route 字典**：`api` / `local` 两类端点都要能接，加一个厂商只改配置
 - 协议按 2.1 的四个开关。首轮：`observation=screenshot`、`guest_actions=mouse_keyboard`、`guest_shell=true`、`harness_shell=false`
 - 环境失败记 `infra_error`，不得记成模型 0 分
@@ -131,7 +131,7 @@ third_party/OSWorld      # checkout，不进 git（见 .gitignore）
 - 阶段 0：`harness=stub`，`model.backend=dummy`，`compute_backend=local_linux`
 - 阶段 1：`harness=deepseek_harness`，`model.backend=openai_compat`，`bench=osworld_verified`
 
-**模型接入不绑定任何厂商。** 评测对象是「任意 OpenAI 兼容端点上的模型」——`Qwen2.5-VL-7B-Instruct` 只是首轮选定的验证对象，DeepSeek V4 系列以及后续其他厂商的模型都必须能靠改配置接进来，不许在代码里出现厂商分支。
+**模型接入不绑定任何厂商。** 评测对象是「任意 OpenAI 兼容端点上的模型」——具体型号由实验 YAML 的 `model.name` 填写，不锁定某一代号。DeepSeek V4 系列以及后续其他厂商的模型都必须能靠改配置接进来，不许在代码里出现厂商分支。
 
 ```text
 model.backend           dummy | openai_compat
@@ -228,7 +228,7 @@ limits.max_screenshot_history     截图历史深度，按端点上下文容量�
 model.backend           openai_compat
 model.endpoint_kind     api（前期）
 model.provider_route    cordis.yml 里的 route 名
-model.name              Qwen2.5-VL-7B-Instruct（首轮；可改字段，不写死厂商）
+model.name              按实际 OpenAI 兼容端点填写，不锁定某一代号
 model.api_key_env       环境变量名
 model.input_modalities  [text, image]
 protocol.observation     screenshot
@@ -337,21 +337,20 @@ prerelease = "if-necessary"
 - 内置 catalog route 的 `models` 列表一旦声明就**替换**整个 catalog，只想改一个模型用 `modelOverrides`。
 - 备选路径：`dsh-llm-deepseek` 直连 adapter 也支持 `inputModalities: [text, image]`，但它只注册一条固定 route（`deepseek-official`）且带 DeepSeek 专有的 thinking / `reasoning_content` 回传语义。**默认统一走 pi-ai**，只有需要 DeepSeek 官方 wire 语义时才挂它，且不要同时把同一厂商挂两遍。
 
-#### 首轮选定的模型：`Qwen2.5-VL-7B-Instruct`
+#### 视觉 token 预算参考（以常见 7B VLM 为例）
 
-已核实的事实（Hugging Face `Qwen/Qwen2.5-VL-7B-Instruct`）：
+下面的数字来自 Hugging Face 上一个 7B 视觉模型的公开配置，用来估算 1920×1080 截图的上下文占用。**这不是锁定的评测型号**——阶段 1 的 `model.name` 按实际 OpenAI 兼容端点填写。换型号后应按该模型的 patch size / 上下文长度重新核对，不要照搬。
 
-| 项 | 值 |
+| 项 | 参考值（7B VLM 一例） |
 | --- | --- |
-| 许可 | Apache-2.0，**非 gated**，可自托管 |
 | 上下文 | `max_position_embeddings = 128000` |
 | 视觉切块 | `patch_size = 14`，`spatial_merge_size = 2`，即 **28 px 一个视觉 token** |
 | 预处理上限 | `min_pixels = 3136`，`max_pixels = 12845056`（约 3584×3584） |
 
 由此得到的三条实现约束：
 
-- 它是**视觉模型**，所以首轮直接用 `observation=screenshot`，route 上必须声明 `input: [text, image]`（或 route 级 `defaultInput`）。
-- 1920×1080 远低于 `max_pixels`，**不会**被预处理自动缩小，视觉 token 要按全尺寸算——见 6.4 的预算表。
+- 阶段 1 按视觉模型来配，所以直接用 `observation=screenshot`，route 上必须声明 `input: [text, image]`（或 route 级 `defaultInput`）。
+- 1920×1080 远低于这类模型常见的 `max_pixels`，**不会**被预处理自动缩小，视觉 token 要按全尺寸算——见 6.4 的预算表。
 - 端点地址与密钥待提供。是否真支持图像仍要靠接图连通性测试确认，**不要凭型号名假设**：声明正确但端点不支持图，只会在跑题中途才炸。
 
 顺带一条通用警告：不要为了「能跑截图」给纯文本型号硬写 `input: [text, image]`。dsh 允许你这么声明，但请求会被端点以 400 拒绝，而图片此时已进入持久化历史，会把整个会话卡死在必然失败的重试上。dsh 出厂 catalog 里的 `deepseek-v4-flash` / `deepseek-v4-pro` 就都没有声明 `image`，属于纯文本型号。
@@ -375,7 +374,7 @@ dsh 对图像有两道上限，撞上了不会报错而是降级，必须按这�
 
 #### 真正的瓶颈是模型上下文，不是 dsh 的 20 MiB
 
-对 `Qwen2.5-VL-7B-Instruct`（28 px 一个视觉 token，见 6.3）估算 1920×1080 一张截图：
+对上述 7B VLM 参考配置（28 px 一个视觉 token）估算 1920×1080 一张截图：
 
 ```text
 smart_resize 到 28 的整数倍：1920→1932，1080→1092

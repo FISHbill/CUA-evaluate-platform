@@ -1,6 +1,6 @@
 # 已确认需求（2026-08-19，2026-08-20 修订）
 
-对照 [PLAN.md](./PLAN.md) 第 8 节默认假设：整体没有大的方向分歧。下面是本次确认后的约束，后续实现以本文为准。2026-08-20 补充：真实推理验证用 **多模态模型 + DeepSeek Harness**；计算资源接口不绑定 4090。2026-08-20 二次确认：关闭了模型接入路线、单题 id、协议边界、存储形态、指标口径、步数上限六项待定项，见第 6 节。2026-08-21 修订：模型接口**厂商中立**，不限于一家厂商；首轮模型选定 **`Qwen2.5-VL-7B-Instruct`**；**guest 内 bash 允许使用**（dsh 宿主侧 bash 仍关闭）。见第 6.3、6.7 节。
+对照 [PLAN.md](./PLAN.md) 第 8 节默认假设：整体没有大的方向分歧。下面是本次确认后的约束，后续实现以本文为准。2026-08-20 补充：真实推理验证用 **多模态模型 + DeepSeek Harness**；计算资源接口不绑定 4090。2026-08-20 二次确认：关闭了模型接入路线、单题 id、协议边界、存储形态、指标口径、步数上限六项待定项，见第 6 节。2026-08-21 修订：模型接口**厂商中立**，不限于一家厂商；**guest 内 bash 允许使用**（dsh 宿主侧 bash 仍关闭）。2026-08-22 修订：阶段 1 的具体型号**不锁定**——走外部 OpenAI 兼容 API，`model.name` 由 YAML 填写；原候选 Qwen2.5 视觉系列可能改为 Qwen 3 视觉系列。见第 6.3、6.7、6.8 节。
 
 ---
 
@@ -36,8 +36,8 @@ WebArena 看起来「只是浏览器」，但官方站点镜像下载约 **180 G
 ```
 
 - **模型**：**接口厂商中立**。评测对象是「任意 OpenAI 兼容端点上的模型」，加一个厂商只在 cordis.yml 里加一条 route，代码不得出现厂商分支。
-- **首轮选定**（2026-08-21）：**`Qwen2.5-VL-7B-Instruct`**（Apache-2.0，非 gated，128K 上下文）。端点地址与 API key 由使用方在环境搭好后提供，配置里只放可改字段。
-- **由此决定首轮协议**：它是视觉模型，所以首轮直接走 `observation=screenshot` + `guest_actions=mouse_keyboard` + `guest_shell=true`，截图协议一开始就能用。
+- **型号不锁定**（2026-08-22）：阶段 1 调用**外部** OpenAI 兼容 API。具体 `model.name` 写在实验 YAML 里，代码不得写死某一代号。原候选 `Qwen2.5-VL-7B-Instruct` 目前无法经 API 直接调用，后续可能改为 Qwen 3 视觉系列。端点地址与 API key 由使用方在环境搭好后提供。
+- **由此决定首轮协议**：阶段 1 仍按视觉模型来配，走 `observation=screenshot` + `guest_actions=mouse_keyboard` + `guest_shell=true`，截图协议一开始就能用。换一个视觉型号不改协议。
 - **`observation=text` 仍是合法取值**，留给纯文本模型（例如 dsh 出厂 catalog 里未声明 `image` 的 `deepseek-v4-flash` / `deepseek-v4-pro`），但**不是**首轮配置。协议不同的 run 结果分列记录。
 - **硬性前提**：`observation=screenshot` 时模型必须支持图像输入且在配置里**显式声明** image modality——dsh 两个 adapter 都把未声明的模型当纯文本，截图会在附加前被拒。反过来也不要给纯文本型号硬写 `image`：端点会以 400 拒绝，而图片此时已进入持久化历史，会把会话卡死在必然失败的重试上。
 - **7B 模型的上下文是真瓶颈**：1920×1080 一张截图约 2,700 视觉 token，20 张约 54K。128K 上下文放得下，但自托管时 vLLM 的 `--max-model-len` 必须显式设够，否则会在跑题中途报上下文超限。截图历史深度必须是配置项。详见 [AGENTS.md](../AGENTS.md) 第 6.4 节。
@@ -111,7 +111,7 @@ Cursor VM 通常无 GPU：阶段 0 只保证 dummy + fake；真实「模型 + ds
 
 在 **harness 的配置里**声明模型端点，不在平台代码里写死。用 dsh 的 `dsh-llm-pi-ai` 插件：一个实例持有一个 route 字典，pi-ai 未内置的端点整份声明即可，OpenAI 兼容网关与自托管服务器都属于配置。
 
-**厂商中立是硬要求**：加一个厂商等于在 cordis.yml 里加一条 route，平台代码不得出现厂商名分支。首轮验证用 `Qwen2.5-VL-7B-Instruct`，DeepSeek V4 系列与后续其他厂商同样适用。
+**厂商中立是硬要求**：加一个厂商等于在 cordis.yml 里加一条 route，平台代码不得出现厂商名分支。阶段 1 的具体型号不锁定（见 6.8）；DeepSeek V4 系列与后续其他厂商同样适用。
 
 ### 6.2 模型接入必须支持两种端点
 
@@ -157,11 +157,17 @@ Table 1 渲染器仍保留双指标与 ASR 越低越好的能力，但阶段 1 �
 
 | 项 | 确认 |
 | --- | --- |
-| 首轮模型 | **`Qwen2.5-VL-7B-Instruct`**，经 OpenAI 兼容端点 |
+| 首轮模型 | **不锁定型号**。阶段 1 经外部 OpenAI 兼容 API 调用；`model.name` 是 YAML 可改字段 |
 | 端点与密钥 | 使用方在环境搭建完成后提供；配置里只放 `baseURL` 与 `api_key_env` 可改字段。未提供前 `doctor` 报「端点未配置」并非 0 退出，不得退化成 dummy |
 | bash | **允许使用**，落点是桌面 VM 内部（`guest_shell=true`）；dsh 宿主侧 `harness_shell` 保持 `false` |
 | 首轮协议 | `observation=screenshot` + `guest_actions=mouse_keyboard` + `guest_shell=true` + `harness_shell=false` |
-| 厂商中立 | 首轮选定 Qwen 不改变接口的中立性：换厂商只加 route、改 YAML，不改代码 |
+| 厂商中立 | 换厂商 / 换型号只加 route、改 YAML，不改代码 |
+
+### 6.8 2026-08-22 追加：型号不锁定
+
+阶段 1 的 OSWorld 单题验证走**外部模型 API**（OpenAI 兼容协议），不在代码里绑定某一代号。原候选 `Qwen2.5-VL-7B-Instruct` 目前无法经 API 直接调用，后续可能改为 Qwen 3 视觉系列。换型号只改 `smoke_osworld.yaml` 的 `model.name` 与 cordis.yml 的 route。协议、harness、bench、资源约束不变。
+
+仍要求：`observation=screenshot` 时必须声明 `image` modality；不得凭型号名假设端点真能收图（见下方未关闭项）。
 
 三条尚未关闭的项：
 

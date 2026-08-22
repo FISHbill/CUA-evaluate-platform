@@ -8,7 +8,7 @@
 
 ## 1. 里程碑总览
 
-进度：**M0 已完成**（`uv sync` / `cua-eval --help` / `ruff` / `mypy` / `pytest` 全绿，两份实验 YAML 通过校验）。下一步是 M1。
+进度：**M0 已完成**。本 PR 交付 **M1**（假链路端到端：dummy + stub + fake bench + `cua-eval run`）。下一步是 M2。
 
 | 里程碑 | 内容 | 执行机 |
 | --- | --- | --- |
@@ -203,14 +203,14 @@ M2 与 M4 在 M1 之后可以并行；M3 的测试随 M0–M2 增量补，不要
 
 ## 8. M6 — 真实单题验证（换机）
 
-首轮配置（已确认）：`model.name=Qwen2.5-VL-7B-Instruct`、`observation=screenshot`、`guest_actions=mouse_keyboard`、`guest_shell=true`、`harness_shell=false`。
+首轮配置（已确认）：`observation=screenshot`、`guest_actions=mouse_keyboard`、`guest_shell=true`、`harness_shell=false`。`model.name` **不锁定**——阶段 1 走外部 OpenAI 兼容 API，按实际端点填写；原候选 Qwen2.5 视觉系列可能改为 Qwen 3 视觉系列。
 
 **前置条件**（任一不满足就不要开始）：
 
 | 条件 | 要求 |
 | --- | --- |
 | 执行机 | 8 vCPU、32 GB RAM、`/dev/kvm` 当前用户可读、≥ 150 GB 可用盘、Docker 可用 |
-| 模型端点 | `Qwen2.5-VL-7B-Instruct` 的 OpenAI 兼容端点 + 密钥，由使用方在环境搭好后提供 |
+| 模型端点 | 任意 OpenAI 兼容视觉模型端点 + 密钥，由使用方在环境搭好后提供；型号写在 YAML 里 |
 | 密钥 | 通过环境变量提供，不进 git / YAML / 桌面 VM |
 | 上下文容量 | 自托管时 vLLM 的 `--max-model-len` 必须够放「截图历史深度 × 约 2,700 token」，见 AGENTS.md 6.4 |
 
