@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -85,3 +86,40 @@ def test_osworld_smoke_does_not_fall_back_to_dummy(
 def test_smoke_fake_yaml_still_valid() -> None:
     experiment = Experiment.from_yaml(FAKE_YAML)
     assert experiment.agent.model.backend is ModelBackend.DUMMY
+
+
+def test_cli_report_after_fake_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    run_result = runner.invoke(app, ["run", "-c", str(FAKE_YAML)], catch_exceptions=False)
+    assert run_result.exit_code == 0, run_result.output
+    run_id = next(
+        line.split(maxsplit=1)[1].strip()
+        for line in run_result.output.splitlines()
+        if line.startswith("run_id")
+    )
+    report_result = runner.invoke(app, ["report", run_id], catch_exceptions=False)
+    assert report_result.exit_code == 0, report_result.output
+    assert "# Table 1" in report_result.output
+    assert "dummy-fixed-actions" in report_result.output
+    assert "dummy" in report_result.output
+    table = tmp_path / "results" / run_id / "table1.md"
+    assert table.is_file()
+    assert "100.0" in table.read_text(encoding="utf-8")
+
+
+def test_cli_prune_respects_days(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    old = tmp_path / "results" / "20260101-000000-dead"
+    old.mkdir(parents=True)
+    (old / "run.json").write_text("{}", encoding="utf-8")
+    os.utime(old, (0, 0))
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["prune", "--results-dir", str(tmp_path / "results"), "--days", "14"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert not old.exists()
+

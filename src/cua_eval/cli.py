@@ -8,9 +8,12 @@ from typing import Annotated
 import typer
 
 from cua_eval import __version__
+from cua_eval.doctor import run_doctor
 from cua_eval.errors import ConfigError, UnsupportedBenchError, UnsupportedComputeBackend
 from cua_eval.orchestrator.run import run_experiment
+from cua_eval.report.table1 import render_run
 from cua_eval.schema import Experiment
+from cua_eval.store.results import ResultStore, prune_results
 
 app = typer.Typer(
     name="cua-eval",
@@ -18,18 +21,6 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
-
-# 未实现的子命令用这个退出码，与「配置不合法」（1）区分开。
-EXIT_NOT_IMPLEMENTED = 2
-
-
-def _not_implemented(command: str, milestone: str) -> None:
-    typer.secho(
-        f"`cua-eval {command}` 尚未实现，由 {milestone} 交付（见 docs/EXECUTION_PLAN.md）。",
-        fg=typer.colors.YELLOW,
-        err=True,
-    )
-    raise typer.Exit(code=EXIT_NOT_IMPLEMENTED)
 
 
 def _version_callback(value: bool) -> None:
@@ -49,12 +40,27 @@ def main(
 
 
 @app.command()
-def doctor() -> None:
+def doctor(
+    config: Annotated[
+        Path | None,
+        typer.Option("-c", "--config", exists=True, dir_okay=False, help="实验配置 YAML（可选）"),
+    ] = None,
+) -> None:
     """检查 Python / Docker / KVM / 磁盘 / 模型端点是否就绪。
 
     缺项时退出非 0 并说明缺什么，绝不静默降级成 dummy 还宣称「已验证模型」。
     """
-    _not_implemented("doctor", "M2")
+    experiment = None
+    if config is not None:
+        try:
+            experiment = Experiment.from_yaml(config)
+        except ConfigError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+    report = run_doctor(experiment)
+    typer.echo(report.render())
+    if not report.ok:
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -99,15 +105,65 @@ def run(
 @app.command()
 def report(
     run_id: Annotated[str, typer.Argument(help="results/ 下的 run_id")],
+    results_dir: Annotated[
+        Path,
+        typer.Option("--results-dir", help="results 根目录"),
+    ] = Path("results"),
 ) -> None:
     """把 Table 1 风格文本打到 stdout，并写 results/<run_id>/table1.md。"""
-    _not_implemented("report", "M2")
+    store = ResultStore(results_dir)
+    try:
+        record = store.load_run(run_id)
+    except ConfigError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    text = render_run(record)
+    typer.echo(text)
+    out = results_dir / run_id / "table1.md"
+    out.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+    typer.echo(f"wrote {out}", err=True)
 
 
 @app.command()
-def prune() -> None:
+def prune(
+    config: Annotated[
+        Path | None,
+        typer.Option("-c", "--config", exists=True, dir_okay=False, help="读 YAML 的 retention"),
+    ] = None,
+    results_dir: Annotated[
+        Path | None,
+        typer.Option("--results-dir", help="覆盖 results 根目录"),
+    ] = None,
+    days: Annotated[
+        int | None,
+        typer.Option("--days", help="覆盖 artifact_retention_days"),
+    ] = None,
+) -> None:
     """按 artifact_retention_days 清理过期的 results/<run_id>。"""
-    _not_implemented("prune", "M2")
+    retention = 14
+    root = Path("results")
+    if config is not None:
+        try:
+            experiment = Experiment.from_yaml(config)
+        except ConfigError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+        retention = experiment.artifact_retention_days
+        root = experiment.results_dir
+    if results_dir is not None:
+        root = results_dir
+    if days is not None:
+        if days <= 0:
+            typer.secho("--days 必须为正", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+        retention = days
+    deleted = prune_results(root, retention)
+    if not deleted:
+        typer.echo(f"nothing to prune under {root} (retention={retention}d)")
+        return
+    typer.echo(f"deleted {len(deleted)} run(s) older than {retention}d under {root}")
+    for path in deleted:
+        typer.echo(f"  {path.name}")
 
 
 if __name__ == "__main__":  # pragma: no cover

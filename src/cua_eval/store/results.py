@@ -5,14 +5,19 @@ from __future__ import annotations
 import json
 import re
 import secrets
+import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from cua_eval.errors import ConfigError
 from cua_eval.schema import Experiment, RunRecord, TrialResult
 
 _SAFE_ID = re.compile(r"[^A-Za-z0-9._-]+")
+# 与 new_run_id 对齐：只 prune 平台自己写下的目录，避免误删用户文件。
+RUN_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
+SECONDS_PER_DAY = 86400
 
 
 def new_run_id(now: datetime | None = None) -> str:
@@ -89,11 +94,67 @@ class ResultStore:
             return StartedRun(run_id=run_id, run_dir=run_dir, experiment=experiment)
         raise RuntimeError("无法分配未占用的 run_id")
 
+    def load_run(self, run_id: str) -> RunRecord:
+        if Path(run_id).name != run_id or not RUN_ID_RE.match(run_id):
+            raise ConfigError(f"非法 run_id: {run_id!r}")
+        path = (self.results_dir / run_id / "run.json").resolve()
+        root = self.results_dir.resolve()
+        if not path.is_relative_to(root) or path.parent.parent != root:
+            raise ConfigError(f"run_id 越出 results 目录: {run_id!r}")
+        if not path.is_file():
+            raise ConfigError(f"找不到 {path}")
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ConfigError(f"读 {path} 失败: {exc}") from exc
+        try:
+            return RunRecord.model_validate(payload)
+        except ValueError as exc:
+            raise ConfigError(f"{path} 不是合法的 RunRecord: {exc}") from exc
+
+
+def prune_results(
+    results_dir: Path,
+    retention_days: int,
+    *,
+    now: datetime | None = None,
+) -> list[Path]:
+    """删除 `results_dir` 下过期的 `run_id` 目录。不会删到该目录之外。"""
+    if retention_days <= 0:
+        raise ValueError("retention_days 必须为正")
+    root = results_dir.resolve()
+    if not root.is_dir():
+        return []
+    cutoff = (now or datetime.now(UTC)).timestamp() - retention_days * SECONDS_PER_DAY
+    deleted: list[Path] = []
+    for child in root.iterdir():
+        if not RUN_ID_RE.match(child.name):
+            continue
+        try:
+            resolved = child.resolve()
+        except OSError:
+            continue
+        if resolved.parent != root or resolved == root:
+            continue
+        if not resolved.is_dir():
+            continue
+        try:
+            mtime = resolved.stat().st_mtime
+        except OSError:
+            continue
+        if mtime > cutoff:
+            continue
+        shutil.rmtree(resolved)
+        deleted.append(resolved)
+    return deleted
+
 
 __all__ = [
+    "RUN_ID_RE",
     "ResultStore",
     "StartedRun",
     "TaskWriter",
     "new_run_id",
+    "prune_results",
     "sanitize_id",
 ]

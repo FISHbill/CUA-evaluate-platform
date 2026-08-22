@@ -8,7 +8,7 @@
 
 ## 1. 里程碑总览
 
-进度：**M0 已完成**。本 PR 交付 **M1**（假链路端到端：dummy + stub + fake bench + `cua-eval run`）。下一步是 M2。
+进度：**M0 与 M1 已完成**。本 PR 继续交付 **M2**（report / prune / doctor）与 **M3**（测试套件 + CI）。下一步是 M4（dsh 接入）。
 
 | 里程碑 | 内容 | 执行机 |
 | --- | --- | --- |
