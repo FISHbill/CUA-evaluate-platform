@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from cua_eval.actions import (
+    GUI_ACTION_TYPES,
     Action,
     ClickAction,
     DoubleClickAction,
-    GUI_ACTION_TYPES,
     KeyAction,
     MoveAction,
     ScrollAction,

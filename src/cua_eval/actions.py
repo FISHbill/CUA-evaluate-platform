@@ -136,8 +136,8 @@ def scale_pixels(
         raise ValueError(f"from_size 必须为正，得到 {from_size}")
     if to_w <= 0 or to_h <= 0:
         raise ValueError(f"to_size 必须为正，得到 {to_size}")
-    nx = int(round(x * to_w / from_w))
-    ny = int(round(y * to_h / from_h))
+    nx = round(x * to_w / from_w)
+    ny = round(y * to_h / from_h)
     nx = min(max(nx, 0), to_w - 1)
     ny = min(max(ny, 0), to_h - 1)
     return nx, ny
@@ -201,10 +201,10 @@ def to_pyautogui(action: Action) -> str:
 
 
 __all__ = [
+    "GUI_ACTION_TYPES",
     "Action",
     "ClickAction",
     "DoubleClickAction",
-    "GUI_ACTION_TYPES",
     "KeyAction",
     "MoveAction",
     "ScrollAction",
