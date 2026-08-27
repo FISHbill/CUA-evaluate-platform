@@ -93,7 +93,8 @@ def test_scienceboard_smoke_does_not_fall_back_to_dummy(
     result = runner.invoke(app, ["run", "-c", str(SCIENCEBOARD_YAML)], catch_exceptions=False)
     assert result.exit_code == 1, result.output
     assert "dummy" in result.output.lower()
-    assert "ScienceBoard" in result.output or "VM.zip" in result.output or "checkout" in result.output
+    assert "ScienceBoard" in result.output or "VM.zip" in result.output
+    assert "checkout" in result.output or "ScienceBoard" in result.output
     assert not _run_dirs(tmp_path / "results")
 
 
@@ -105,7 +106,8 @@ def test_mac_agent_bench_smoke_does_not_fall_back_to_dummy(
     result = runner.invoke(app, ["run", "-c", str(MAC_YAML)], catch_exceptions=False)
     assert result.exit_code == 1, result.output
     assert "dummy" in result.output.lower()
-    assert "MacAgentBench" in result.output or "Fleet" in result.output or "checkout" in result.output
+    assert "MacAgentBench" in result.output or "Fleet" in result.output
+    assert "checkout" in result.output or "MacAgentBench" in result.output
     assert not _run_dirs(tmp_path / "results")
 
 

@@ -67,7 +67,10 @@ def checkout_prereq(root: Path, *, pin: str, clone_hint: str, check_name: str) -
                 f"{root} 不是 git 仓库。请用官方 checkout，不要把源码复制进本仓库。",
             )
         ]
-    return [Prereq(check_name, True, str(root)), verify_pin(root, pin, check_name=f"{check_name}_commit")]
+    return [
+        Prereq(check_name, True, str(root)),
+        verify_pin(root, pin, check_name=f"{check_name}_commit"),
+    ]
 
 
 def verify_pin(root: Path, pin: str, *, check_name: str) -> Prereq:

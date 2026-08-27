@@ -11,7 +11,8 @@ from cua_eval.benches.mac_agent_bench import MacAgentBench, default_root
 from cua_eval.errors import ConfigError
 from cua_eval.schema import Experiment
 
-CONFIG = Path(__file__).resolve().parents[1] / "configs" / "experiments" / "smoke_mac_agent_bench.yaml"
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs" / "experiments"
+CONFIG = CONFIG_DIR / "smoke_mac_agent_bench.yaml"
 
 
 @pytest.mark.mac_agent_bench

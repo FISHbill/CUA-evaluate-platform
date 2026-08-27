@@ -110,7 +110,11 @@ def collect_preflight(
         Prereq(
             "mac_fleet_pool",
             bool(pool),
-            pool if pool else f"未设置 {FLEET_POOL_ENV}。池 id 不是口令，乱写会 unknown access label。",
+            (
+                pool
+                if pool
+                else f"未设置 {FLEET_POOL_ENV}。池 id 不是口令，乱写会 unknown access label。"
+            ),
         )
     )
     checks.append(
@@ -152,7 +156,11 @@ def collect_preflight(
 
 
 def require_ready(root: Path, pin: str, *, environ: dict[str, str] | None = None) -> None:
-    failed = [item for item in collect_preflight(root, pin, environ=environ, probe=False) if not item.ok]
+    failed = [
+        item
+        for item in collect_preflight(root, pin, environ=environ, probe=False)
+        if not item.ok
+    ]
     if not failed:
         return
     lines = "; ".join(f"{item.name}: {item.detail}" for item in failed)
@@ -281,14 +289,20 @@ class MacAgentBench:
                     import shutil
 
                     shutil.rmtree(work_dir, ignore_errors=True)
-                steps = int(getattr(env, "_step_no", 0) or getattr(getattr(env, "task", None), "step_no", 0) or 0)
+                steps = int(
+                    getattr(env, "_step_no", 0)
+                    or getattr(getattr(env, "task", None), "step_no", 0)
+                    or 0
+                )
             else:
                 steps = self._step_loop(env, agent, task_id, instruction)
             score = self._official_score(env)
         except (InfraError, ConfigError):
             raise
         except Exception as exc:
-            raise InfraError(f"MacAgentBench trial 失败（环境故障，不得记成模型 0 分）: {exc}") from exc
+            raise InfraError(
+                f"MacAgentBench trial 失败（环境故障，不得记成模型 0 分）: {exc}"
+            ) from exc
 
         wall = time.monotonic() - start
         failure = _score_class(score)

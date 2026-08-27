@@ -100,7 +100,8 @@ def collect_preflight(
         Prereq(
             "scienceboard_vmrun",
             vmrun is not None,
-            vmrun or "未找到 vmrun。ScienceBoard 走 VMware DesktopEnv，不是 OSWorld 的 Docker/qcow2。",
+            vmrun
+            or "未找到 vmrun。ScienceBoard 走 VMware DesktopEnv，不是 OSWorld 的 Docker/qcow2。",
         )
     )
     return checks
@@ -215,7 +216,9 @@ class ScienceBoardBench:
         except (InfraError, ConfigError):
             raise
         except Exception as exc:
-            raise InfraError(f"ScienceBoard trial 失败（环境故障，不得记成模型 0 分）: {exc}") from exc
+            raise InfraError(
+                f"ScienceBoard trial 失败（环境故障，不得记成模型 0 分）: {exc}"
+            ) from exc
 
         wall = time.monotonic() - start
         score = 1.0 if passed else 0.0
@@ -336,7 +339,7 @@ class ScienceBoardBench:
             manager = manager_cls(**manager_args)
 
             @dataclass
-            class IdleCommunity(Community):  # type: ignore[misc, valid-type]
+            class IdleCommunity(Community):  # type: ignore[misc]
                 def __call__(self, *args: object, **kwargs: object) -> list[object]:
                     del args, kwargs
                     raise ConfigError(

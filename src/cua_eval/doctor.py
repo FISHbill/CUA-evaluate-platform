@@ -406,10 +406,12 @@ def evaluate_experiment(
         )
         from cua_eval.benches.osworld import collect_preflight, default_osworld_root
 
-        for item in collect_preflight(default_osworld_root(), pin or OSWORLD_MIN_COMMIT):
-            if item.name == "/dev/kvm":
+        for osworld_item in collect_preflight(default_osworld_root(), pin or OSWORLD_MIN_COMMIT):
+            if osworld_item.name == "/dev/kvm":
                 continue
-            checks.append(CheckResult(name=item.name, ok=item.ok, detail=item.detail))
+            checks.append(
+                CheckResult(name=osworld_item.name, ok=osworld_item.ok, detail=osworld_item.detail)
+            )
     elif experiment.bench is BenchId.MAC_AGENT_BENCH:
         pin = experiment.bench_version or ""
         checks.append(
@@ -419,12 +421,20 @@ def evaluate_experiment(
                 detail=pin if pin else "mac_agent_bench 必须 pin commit，不要浮动 main",
             )
         )
-        from cua_eval.benches.mac_agent_bench import collect_preflight, default_root
+        from cua_eval.benches.mac_agent_bench import (
+            collect_preflight as collect_mac_preflight,
+        )
+        from cua_eval.benches.mac_agent_bench import default_root as default_mac_root
 
-        for item in collect_preflight(
-            default_root(), pin or "0" * 7, environ=dict(env), probe=probe
+        for mac_item in collect_mac_preflight(
+            default_mac_root(),
+            pin or "0" * 7,
+            environ={str(k): str(v) for k, v in env.items()},
+            probe=probe,
         ):
-            checks.append(CheckResult(name=item.name, ok=item.ok, detail=item.detail))
+            checks.append(
+                CheckResult(name=mac_item.name, ok=mac_item.ok, detail=mac_item.detail)
+            )
     elif experiment.bench is BenchId.SCIENCEBOARD:
         pin = experiment.bench_version or ""
         checks.append(
@@ -434,10 +444,19 @@ def evaluate_experiment(
                 detail=pin if pin else "scienceboard 必须 pin commit，不要浮动 main",
             )
         )
-        from cua_eval.benches.scienceboard import collect_preflight, default_root
+        from cua_eval.benches.scienceboard import (
+            collect_preflight as collect_scienceboard_preflight,
+        )
+        from cua_eval.benches.scienceboard import default_root as default_scienceboard_root
 
-        for item in collect_preflight(default_root(), pin or "0" * 7, environ=dict(env)):
-            checks.append(CheckResult(name=item.name, ok=item.ok, detail=item.detail))
+        for sci_item in collect_scienceboard_preflight(
+            default_scienceboard_root(),
+            pin or "0" * 7,
+            environ={str(k): str(v) for k, v in env.items()},
+        ):
+            checks.append(
+                CheckResult(name=sci_item.name, ok=sci_item.ok, detail=sci_item.detail)
+            )
 
     if model.backend is ModelBackend.DUMMY:
         checks.append(

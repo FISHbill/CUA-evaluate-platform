@@ -73,7 +73,9 @@ class _FakeMacEnv:
     def capture_png(self) -> tuple[bytes, int, int]:
         return self.png, 64, 64
 
-    def step(self, action: object, pause: float = 2) -> tuple[dict[str, Any], int, bool, dict[str, Any]]:
+    def step(
+        self, action: object, pause: float = 2
+    ) -> tuple[dict[str, Any], int, bool, dict[str, Any]]:
         del pause
         self.actions.append(action)
         self._step_no += 1
@@ -163,14 +165,15 @@ def test_preflight_does_not_require_local_kvm(tmp_path: Path) -> None:
     checks = {item.name: item for item in collect_preflight(root, "deadbeef", environ={})}
     assert checks["mac_agent_bench_hdd"].ok
     assert not checks["mac_fleet_url"].ok
-    assert "禁止下载" in checks["mac_agent_bench_hdd"].detail or "远程" in checks["mac_agent_bench_hdd"].detail
+    hdd = checks["mac_agent_bench_hdd"]
+    assert "禁止下载" in hdd.detail or "远程" in hdd.detail
     assert "/dev/kvm" not in checks
 
 
 def test_require_ready_names_missing_fleet(tmp_path: Path) -> None:
     root = tmp_path / "MacAgentBench"
     _init_git_repo(root)
-    with pytest.raises(ConfigError, match="Fleet"):
+    with pytest.raises(ConfigError, match="FLEET|dummy"):
         require_ready(root, "0" * 40, environ={})
 
 

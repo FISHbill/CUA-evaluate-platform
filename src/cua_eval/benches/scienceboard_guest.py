@@ -157,10 +157,9 @@ class ScienceBoardGuest:
             script = to_pyautogui(action)  # type: ignore[arg-type]
             self._osworld._controller.execute_python_command(script)
             return
-        caller = getattr(self._manager, "__call__", None)
         script = to_pyautogui(action)  # type: ignore[arg-type]
-        if callable(caller):
-            caller(script)
+        if callable(self._manager):
+            self._manager(script)
             return
         execute = getattr(self._manager, "execute_python_command", None)
         if callable(execute):
