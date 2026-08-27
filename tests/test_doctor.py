@@ -83,6 +83,34 @@ def test_osworld_without_endpoint_does_not_fall_back_to_dummy() -> None:
     assert checks["osworld_image"].ok is False
 
 
+def test_mac_doctor_skips_kvm_and_does_not_fall_back_to_dummy() -> None:
+    experiment = Experiment.from_yaml(CONFIG_DIR / "smoke_mac_agent_bench.yaml")
+    report = run_doctor(experiment, facts=_weak_vm(), environ={}, probe=False)
+    names = {c.name: c for c in report.checks}
+    assert "/dev/kvm" not in names
+    assert "docker" not in names
+    assert not report.ok
+    assert not names["mac_fleet_url"].ok
+    assert "dummy" in names["api_key"].detail.lower()
+    rendered = report.render()
+    assert "MacAgentBench" in rendered
+    assert "不要退化成 dummy" in rendered
+
+
+def test_scienceboard_doctor_skips_kvm_and_does_not_fall_back_to_dummy() -> None:
+    experiment = Experiment.from_yaml(CONFIG_DIR / "smoke_scienceboard.yaml")
+    report = run_doctor(experiment, facts=_weak_vm(), environ={}, probe=False)
+    names = {c.name: c for c in report.checks}
+    assert "/dev/kvm" not in names
+    assert "docker" not in names
+    assert not report.ok
+    assert not names["scienceboard_vm"].ok
+    assert "VM.zip" in names["scienceboard_vm"].detail
+    assert "dummy" in names["api_key"].detail.lower()
+    rendered = report.render()
+    assert "ScienceBoard" in rendered
+
+
 def test_text_only_route_rejected_for_screenshot(tmp_path: Path) -> None:
     cordis = {
         "plugins": [

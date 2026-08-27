@@ -7,11 +7,12 @@ from pathlib import Path
 import pytest
 
 from cua_eval.backends.compute import run_job
+from cua_eval.benches.base import get_bench
 from cua_eval.benches.macos import MacOSBench
 from cua_eval.benches.windows import WindowsBench
 from cua_eval.errors import UnsupportedBenchError, UnsupportedComputeBackend
 from cua_eval.orchestrator.run import run_experiment
-from cua_eval.schema import ComputeBackend, Experiment
+from cua_eval.schema import BenchId, ComputeBackend, Experiment
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs" / "experiments"
 
@@ -40,6 +41,18 @@ def test_macos_bench_raises_on_prepare_and_run() -> None:
         bench.prepare()
     with pytest.raises(UnsupportedBenchError, match="macos"):
         bench.run_trial("any", agent=None)  # type: ignore[arg-type]
+
+
+def test_generic_macos_id_is_not_mac_agent_bench() -> None:
+    """通用 macos 客户机仍不支持；MacAgentBench 是另一列。"""
+    experiment = Experiment.from_yaml(CONFIG_DIR / "smoke_mac_agent_bench.yaml")
+    assert experiment.bench is BenchId.MAC_AGENT_BENCH
+    assert experiment.bench is not BenchId.MACOS
+    dispatched = get_bench(experiment)
+    assert dispatched.id == "mac_agent_bench"
+    generic = MacOSBench()
+    with pytest.raises(UnsupportedBenchError, match="macos"):
+        generic.prepare()
 
 
 def test_windows_bench_raises_on_prepare_and_run() -> None:

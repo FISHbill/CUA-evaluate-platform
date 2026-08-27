@@ -24,5 +24,7 @@ jobs:
       - name: Test
         run: uv run pytest
         env:
-          # 默认 CI 不得拉 VM 镜像、不得下载 qcow2、不需要模型密钥
+          # 默认 CI 不得拉 VM 镜像、不得下载 qcow2 / VM.zip / HDD，不需要模型密钥
           CUA_EVAL_OSWORLD: "0"
+          CUA_EVAL_SCIENCEBOARD: "0"
+          CUA_EVAL_MAC_AGENT_BENCH: "0"

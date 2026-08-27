@@ -313,6 +313,14 @@ class TestExperiment:
         with pytest.raises(ValidationError, match="bench_version"):
             self._experiment(bench=BenchId.OSWORLD_VERIFIED)
 
+    def test_scienceboard_must_pin_commit(self) -> None:
+        with pytest.raises(ValidationError, match="bench_version"):
+            self._experiment(bench=BenchId.SCIENCEBOARD)
+
+    def test_mac_agent_bench_must_pin_commit(self) -> None:
+        with pytest.raises(ValidationError, match="bench_version"):
+            self._experiment(bench=BenchId.MAC_AGENT_BENCH)
+
     def test_osworld_pin_must_look_like_sha(self) -> None:
         with pytest.raises(ValidationError, match="commit sha"):
             self._experiment(bench=BenchId.OSWORLD_VERIFIED, bench_version="main")
@@ -346,7 +354,7 @@ class TestExperiment:
 
 
 class TestShippedConfigs:
-    """T0.4：两份实验 YAML 必须能通过 schema 校验。"""
+    """实验 YAML 必须能通过 schema 校验。"""
 
     def test_smoke_fake_is_valid(self) -> None:
         experiment = Experiment.from_yaml(CONFIG_DIR / "smoke_fake.yaml")
@@ -364,6 +372,26 @@ class TestShippedConfigs:
         assert experiment.task_ids == ["5ea617a3-0e86-4ba6-aab2-dac9aa2e8d57"]
         assert experiment.agent.limits.max_steps == 50
         assert experiment.agent.limits.num_envs == 1
+        assert experiment.agent.harness is HarnessId.DEEPSEEK_HARNESS
+        assert experiment.agent.model.accepts_images is True
+        assert experiment.agent.protocol.guest_shell is True
+        assert experiment.agent.protocol.harness_shell is False
+
+    def test_smoke_scienceboard_is_valid(self) -> None:
+        experiment = Experiment.from_yaml(CONFIG_DIR / "smoke_scienceboard.yaml")
+        assert experiment.bench is BenchId.SCIENCEBOARD
+        assert experiment.bench_version is not None
+        assert experiment.task_ids == ["KAlgebra/A-01"]
+        assert experiment.agent.harness is HarnessId.DEEPSEEK_HARNESS
+        assert experiment.agent.model.accepts_images is True
+        assert experiment.agent.protocol.guest_shell is True
+        assert experiment.agent.protocol.harness_shell is False
+
+    def test_smoke_mac_agent_bench_is_valid(self) -> None:
+        experiment = Experiment.from_yaml(CONFIG_DIR / "smoke_mac_agent_bench.yaml")
+        assert experiment.bench is BenchId.MAC_AGENT_BENCH
+        assert experiment.bench_version is not None
+        assert experiment.task_ids == ["clock/1_1"]
         assert experiment.agent.harness is HarnessId.DEEPSEEK_HARNESS
         assert experiment.agent.model.accepts_images is True
         assert experiment.agent.protocol.guest_shell is True

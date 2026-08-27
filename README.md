@@ -30,6 +30,17 @@ dummy 的分数只说明平台链路通了，**不是**模型能力。
 
 阶段 1 配置见 `configs/experiments/smoke_osworld.yaml`：把 `model.name`、`provider_route`、cordis.yml 的 `baseURL` 换成实际端点即可。换视觉型号只改配置，不改代码。
 
+额外 bench（与 OSWorld **分列**，协议不同的 run 不得进同一列）：
+
+```bash
+# ScienceBoard（VMware 盘，禁止下载 VM.zip）
+uv run cua-eval doctor -c configs/experiments/smoke_scienceboard.yaml
+# MacAgentBench（远程 macOS 沙箱，禁止下载 HDD；通用 macos bench 仍不支持）
+uv run cua-eval doctor -c configs/experiments/smoke_mac_agent_bench.yaml
+```
+
+缺 checkout / 缺 VM 盘 / 缺 Fleet 环境变量时 `doctor` / `run` 失败，不退化成 dummy。远程 Mac 控制面只从环境变量读：`CUA_EVAL_MAC_FLEET_URL`、`CUA_EVAL_MAC_POOL`、`CUA_EVAL_MAC_VM_UUID` 以及 SSH 相关变量。ScienceBoard 盘路径：`CUA_EVAL_SCIENCEBOARD_VM_PATH` 或 `VM_PATH`。
+
 ## 文档
 
 - [AGENTS.md](AGENTS.md) — 给编程 agent 的开发手册

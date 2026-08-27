@@ -70,6 +70,8 @@ class HarnessId(StrEnum):
 class BenchId(StrEnum):
     FAKE = "fake"
     OSWORLD_VERIFIED = "osworld_verified"
+    SCIENCEBOARD = "scienceboard"
+    MAC_AGENT_BENCH = "mac_agent_bench"
     MACOS = "macos"
     WINDOWS = "windows"
 
@@ -351,17 +353,30 @@ class Experiment(_Base):
 
     @model_validator(mode="after")
     def _check_bench_pin(self) -> Self:
-        if self.bench is BenchId.OSWORLD_VERIFIED:
-            if self.bench_version is None:
-                raise ValueError(
-                    "bench=osworld_verified 必须 pin bench_version（官方仓库 commit），"
-                    f"不要浮动 main；下限见 AGENTS.md 第 7 节（>= {OSWORLD_MIN_COMMIT}）。"
-                )
-            if not _HEX_RE.match(self.bench_version):
-                raise ValueError(
-                    f"bench_version 应是 7–40 位小写十六进制 commit sha，得到 "
-                    f"{self.bench_version!r}"
-                )
+        pinned = {
+            BenchId.OSWORLD_VERIFIED: (
+                "bench=osworld_verified 必须 pin bench_version（官方仓库 commit），"
+                f"不要浮动 main；下限见 AGENTS.md 第 7 节（>= {OSWORLD_MIN_COMMIT}）。"
+            ),
+            BenchId.SCIENCEBOARD: (
+                "bench=scienceboard 必须 pin bench_version（官方 ScienceBoard 仓库 commit），"
+                "不要浮动 main。"
+            ),
+            BenchId.MAC_AGENT_BENCH: (
+                "bench=mac_agent_bench 必须 pin bench_version（官方 MacAgentBench 仓库 commit），"
+                "不要浮动 main。"
+            ),
+        }
+        message = pinned.get(self.bench)
+        if message is None:
+            return self
+        if self.bench_version is None:
+            raise ValueError(message)
+        if not _HEX_RE.match(self.bench_version):
+            raise ValueError(
+                f"bench_version 应是 7–40 位小写十六进制 commit sha，得到 "
+                f"{self.bench_version!r}"
+            )
         return self
 
     def evaluation_key(self) -> EvaluationKey:

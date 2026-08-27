@@ -144,10 +144,18 @@ def build_guest(environ: dict[str, str] | None = None) -> GuestDesktop:
         from cua_eval.benches.osworld_guest import OSWorldGuest
 
         return OSWorldGuest.from_env(env)
+    if backend in {"lucwei_mac", "mac_agent_bench"}:
+        from cua_eval.benches.lucwei_mac import LucweiMacGuest
+
+        return LucweiMacGuest.from_env(env)
+    if backend == "scienceboard":
+        from cua_eval.benches.scienceboard_guest import ScienceBoardGuest
+
+        return ScienceBoardGuest.from_env(env)
     from cua_eval.errors import ConfigError
 
     raise ConfigError(
-        f"CUA_EVAL_MCP_BACKEND={backend} 不是 fake / osworld。"
+        f"CUA_EVAL_MCP_BACKEND={backend} 不是 fake / osworld / lucwei_mac / scienceboard。"
         "不要退化成宿主机 shell。"
     )
 

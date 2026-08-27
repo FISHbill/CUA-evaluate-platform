@@ -1,0 +1,37 @@
+# ScienceBoard 单题冒烟：KAlgebra 计算共轭并写入变量。与 OSWorld / MacAgentBench 分列记录。
+#
+# 官方环境盘是 VMware（HF OS-Copilot/ScienceBoard-Env 的 VM.zip），不是 OSWorld 的 Docker/qcow2。
+# adapter 禁止下载 VM.zip。缺 checkout / 缺 .vmx 时 doctor / run 失败，不退化成 dummy。
+#   CUA_EVAL_SCIENCEBOARD_ROOT     覆盖 third_party/ScienceBoard
+#   CUA_EVAL_SCIENCEBOARD_VM_PATH  或 VM_PATH 指向已就位的 .vmx（或已下载的 zip）
+name: smoke_scienceboard
+bench: scienceboard
+# 官方仓库 https://github.com/OS-Copilot/ScienceBoard 的 commit pin。不要浮动 main。
+bench_version: c8d5010bdba32afc5dfb16472873bed148c39a45
+task_ids:
+  # KAlgebra A-01：计算 (1+i) 的共轭并存进变量 p。evaluator 读应用内状态。
+  - KAlgebra/A-01
+compute_backend: local_linux
+artifact_retention_days: 14
+
+agent:
+  harness: deepseek_harness
+  harness_version: 0.1.0rc7
+  cordis_config: configs/dsh/osworld.cordis.yml
+  model:
+    backend: openai_compat
+    name: openai-compat-vlm
+    endpoint_kind: api
+    provider_route: vlm-cloud
+    api_key_env: CUA_EVAL_MODEL_API_KEY
+    input_modalities: [text, image]
+  protocol:
+    observation: screenshot
+    guest_actions: mouse_keyboard
+    guest_shell: true
+    harness_shell: false
+  limits:
+    max_steps: 50
+    num_envs: 1
+    task_timeout_seconds: 1800
+    max_screenshot_history: 20

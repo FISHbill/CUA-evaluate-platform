@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from cua_eval.errors import UnsupportedBenchError
 from cua_eval.harness.base import Harness
 from cua_eval.schema import Experiment, FailureClass, TrialResult
 
@@ -43,8 +44,10 @@ class BenchAdapter(Protocol):
 
 def get_bench(experiment: Experiment) -> BenchAdapter:
     from cua_eval.benches.fake import FakeBench
+    from cua_eval.benches.mac_agent_bench import MacAgentBench
     from cua_eval.benches.macos import MacOSBench
     from cua_eval.benches.osworld import OSWorldBench
+    from cua_eval.benches.scienceboard import ScienceBoardBench
     from cua_eval.benches.windows import WindowsBench
     from cua_eval.schema import BenchId
 
@@ -53,7 +56,15 @@ def get_bench(experiment: Experiment) -> BenchAdapter:
             return FakeBench(experiment)
         case BenchId.OSWORLD_VERIFIED:
             return OSWorldBench(experiment)
+        case BenchId.SCIENCEBOARD:
+            return ScienceBoardBench(experiment)
+        case BenchId.MAC_AGENT_BENCH:
+            return MacAgentBench(experiment)
         case BenchId.MACOS:
             return MacOSBench()
         case BenchId.WINDOWS:
             return WindowsBench()
+        case _:
+            raise UnsupportedBenchError(
+                f"未知 bench {experiment.bench.value}；不要在 Linux 上假跑未接入的客户机。"
+            )

@@ -57,7 +57,7 @@ plugins = ["pydantic.mypy"]
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["PIL", "PIL.*", "deepseek_harness", "deepseek_harness.*", "deepseek_harness_runtime", "deepseek_harness_runtime.*", "desktop_env", "desktop_env.*"]
+module = ["PIL", "PIL.*", "deepseek_harness", "deepseek_harness.*", "deepseek_harness_runtime", "deepseek_harness_runtime.*", "desktop_env", "desktop_env.*", "sci", "sci.*", "controllers", "controllers.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -65,4 +65,6 @@ testpaths = ["tests"]
 addopts = "-q"
 markers = [
   "osworld: 需要真实 OSWorld 环境，默认 skip，除非 CUA_EVAL_OSWORLD=1",
+  "scienceboard: 需要真实 ScienceBoard VM，默认 skip，除非 CUA_EVAL_SCIENCEBOARD=1",
+  "mac_agent_bench: 需要远程 macOS 沙箱，默认 skip，除非 CUA_EVAL_MAC_AGENT_BENCH=1",
 ]

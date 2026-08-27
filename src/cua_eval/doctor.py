@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 
 from cua_eval.errors import ConfigError
 from cua_eval.harness.cordis import REQUIRED_PLUGINS, load_cordis_yaml
-from cua_eval.schema import OSWORLD_MIN_COMMIT, Experiment, ModelBackend, Observation
+from cua_eval.schema import OSWORLD_MIN_COMMIT, BenchId, Experiment, ModelBackend, Observation
 
 OSWORLD_MIN_VCPU = 8
 OSWORLD_MIN_RAM_GB = 32.0
@@ -56,13 +56,20 @@ class DoctorReport:
         lines.append("")
         if failed:
             lines.append("缺项: " + ", ".join(failed))
-            lines.append(
-                "此机器还不能跑 OSWorld 真题。阶段 0 假评测（dummy + fake）不依赖 Docker/KVM。"
-            )
+            lines.append(self._footer)
             lines.append("不得把 dummy 分数当成已验证模型，缺端点时也不要退化成 dummy。")
         else:
             lines.append("主机检查通过。")
         return "\n".join(lines)
+
+    @property
+    def _footer(self) -> str:
+        names = {c.name for c in self.checks}
+        if any(name.startswith("mac_") for name in names):
+            return "此机器还不能跑 MacAgentBench。远程沙箱未就绪时不要假装跑过。"
+        if any(name.startswith("scienceboard_") for name in names):
+            return "此机器还不能跑 ScienceBoard。缺 VMware 盘时不要假装跑过。"
+        return "此机器还不能跑 OSWorld 真题。阶段 0 假评测（dummy + fake）不依赖 Docker/KVM。"
 
 
 def collect_host_facts() -> HostFacts:
@@ -384,7 +391,7 @@ def evaluate_experiment(
     checks: list[CheckResult] = []
     model = experiment.agent.model
 
-    if experiment.bench.value == "osworld_verified":
+    if experiment.bench is BenchId.OSWORLD_VERIFIED:
         pin = experiment.bench_version or ""
         checks.append(
             CheckResult(
@@ -402,6 +409,34 @@ def evaluate_experiment(
         for item in collect_preflight(default_osworld_root(), pin or OSWORLD_MIN_COMMIT):
             if item.name == "/dev/kvm":
                 continue
+            checks.append(CheckResult(name=item.name, ok=item.ok, detail=item.detail))
+    elif experiment.bench is BenchId.MAC_AGENT_BENCH:
+        pin = experiment.bench_version or ""
+        checks.append(
+            CheckResult(
+                name="bench_pin",
+                ok=bool(pin),
+                detail=pin if pin else "mac_agent_bench 必须 pin commit，不要浮动 main",
+            )
+        )
+        from cua_eval.benches.mac_agent_bench import collect_preflight, default_root
+
+        for item in collect_preflight(
+            default_root(), pin or "0" * 7, environ=dict(env), probe=probe
+        ):
+            checks.append(CheckResult(name=item.name, ok=item.ok, detail=item.detail))
+    elif experiment.bench is BenchId.SCIENCEBOARD:
+        pin = experiment.bench_version or ""
+        checks.append(
+            CheckResult(
+                name="bench_pin",
+                ok=bool(pin),
+                detail=pin if pin else "scienceboard 必须 pin commit，不要浮动 main",
+            )
+        )
+        from cua_eval.benches.scienceboard import collect_preflight, default_root
+
+        for item in collect_preflight(default_root(), pin or "0" * 7, environ=dict(env)):
             checks.append(CheckResult(name=item.name, ok=item.ok, detail=item.detail))
 
     if model.backend is ModelBackend.DUMMY:
@@ -527,6 +562,9 @@ def evaluate_experiment(
     return checks
 
 
+_OSWORLD_HOST_ONLY = frozenset({"docker", "/dev/kvm", "cpu", "memory", "disk"})
+
+
 def run_doctor(
     experiment: Experiment | None,
     *,
@@ -535,6 +573,11 @@ def run_doctor(
     probe: bool = True,
 ) -> DoctorReport:
     checks = evaluate_host(facts or collect_host_facts())
+    if experiment is not None and experiment.bench in {
+        BenchId.MAC_AGENT_BENCH,
+        BenchId.SCIENCEBOARD,
+    }:
+        checks = [item for item in checks if item.name not in _OSWORLD_HOST_ONLY]
     if experiment is not None:
         checks.extend(evaluate_experiment(experiment, environ=environ, probe=probe))
     ok = all(c.ok for c in checks)

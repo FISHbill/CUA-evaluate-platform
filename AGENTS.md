@@ -88,6 +88,8 @@ pyproject.toml
 .github/workflows/ci.yml            # uv sync + pytest；禁止拉 VM 镜像
 configs/experiments/smoke_fake.yaml
 configs/experiments/smoke_osworld.yaml
+configs/experiments/smoke_scienceboard.yaml
+configs/experiments/smoke_mac_agent_bench.yaml
 configs/dsh/osworld.cordis.yml   # 自备 dsh 组合，见 6.2
 src/cua_eval/
   __init__.py
@@ -106,6 +108,9 @@ src/cua_eval/
   benches/base.py        # BenchAdapter protocol
   benches/fake.py
   benches/osworld.py     # 阶段 1；阶段 0 可先 stub
+  benches/scienceboard.py
+  benches/mac_agent_bench.py
+  benches/lucwei_mac.py  # 远程 macOS guest（Fleet 截图 + SSH）
   benches/macos.py       # raise UnsupportedBenchError
   benches/windows.py     # raise UnsupportedBenchError
   actions.py             # 中立键鼠 schema → OSWorld pyautogui 映射
@@ -118,6 +123,8 @@ tests/
   test_unsupported.py       # 未实现的 backend / bench 抛对应异常
 docs/                    # 已有 PLAN / REQUIREMENTS / RESOURCES，勿删
 third_party/OSWorld      # checkout，不进 git（见 .gitignore）
+third_party/ScienceBoard
+third_party/MacAgentBench
 ```
 
 包名：`cua_eval`。入口：`cua-eval`。
@@ -411,7 +418,9 @@ class BenchAdapter(Protocol):
 
 - `fake`：内存任务，截图可用 64×64 纯色 PNG；evaluator 对 dummy 给固定分即可。
 - `osworld_verified`：调用官方 Docker provider，**pin 官方仓库 commit**（写入配置，不要浮动 `main`）。不要把 OSWorld 源码复制进本仓库；checkout 到 `third_party/OSWorld`（已在 `.gitignore`）。
-- `macos` / `windows`：类存在（`benches/macos.py`、`benches/windows.py`），`prepare`/`run_trial` raise `UnsupportedBenchError`。
+- `scienceboard`：包装官方 ScienceBoard `VMTask.eval()`（**不要**调用 `Tester()` 整段，那会跑他们自己的 agent）。环境盘是 VMware `.vmx` / `VM.zip`，adapter **禁止下载**。checkout 到 `third_party/ScienceBoard`。与 OSWorld 分列记录。
+- `mac_agent_bench`：包装官方 MacAgentBench `MacOSEnv.evaluate_task()`。桌面落在远程 macOS guest（Fleet 截图 + SSH 键鼠），**不是**本机 Docker-OSX，也不是通用 `macos` bench。adapter **禁止下载 HDD**。checkout 到 `third_party/MacAgentBench`。与 OSWorld / ScienceBoard 分列记录。
+- `macos` / `windows`：类存在（`benches/macos.py`、`benches/windows.py`），`prepare`/`run_trial` raise `UnsupportedBenchError`。通用 macOS 客户机仍不支持；MacAgentBench 是另一列。
 
 **OSWorld commit pin 下限**：必须 ≥ `091f5ef1d5544bc74953c77875d5feb5bed30108`。该 commit（`fix(docker): remove orphaned anonymous volumes on container teardown`）修的正是每题泄漏约 32 GB 匿名卷直到写满磁盘的问题；pin 到它之前，[docs/RESOURCES.md](docs/RESOURCES.md) 第 6 节的磁盘估算不成立。
 
@@ -450,8 +459,8 @@ evaluator  exact_match
 ## 9. 测试
 
 - 无网、无 Docker 必须绿：`uv run pytest`
-- 标记 `@pytest.mark.osworld` 的测试默认 skip，除非 `CUA_EVAL_OSWORLD=1`
-- 禁止在测试里下载 qcow2
+- 标记 `@pytest.mark.osworld` / `@pytest.mark.scienceboard` / `@pytest.mark.mac_agent_bench` 的测试默认 skip，除非对应的 `CUA_EVAL_OSWORLD=1` / `CUA_EVAL_SCIENCEBOARD=1` / `CUA_EVAL_MAC_AGENT_BENCH=1`
+- 禁止在测试里下载 qcow2 / VM.zip / Mac HDD
 - CI（`.github/workflows/ci.yml`）只跑 `uv sync` + `uv run pytest`：**不得**拉 VM 镜像、不得下载 qcow2、不得需要模型密钥
 
 阶段 0 的 pytest 必须覆盖：schema 校验、CLI 假评测全链路、Table 1 渲染（含双指标与 ASR 方向）、retention 清理、四种失败分类、未实现 backend/bench 抛 `UnsupportedComputeBackend` / `UnsupportedBenchError`。

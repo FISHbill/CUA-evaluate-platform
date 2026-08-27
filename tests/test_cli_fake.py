@@ -15,6 +15,8 @@ from cua_eval.schema import Experiment, FailureClass, ModelBackend
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs" / "experiments"
 FAKE_YAML = CONFIG_DIR / "smoke_fake.yaml"
 OSWORLD_YAML = CONFIG_DIR / "smoke_osworld.yaml"
+SCIENCEBOARD_YAML = CONFIG_DIR / "smoke_scienceboard.yaml"
+MAC_YAML = CONFIG_DIR / "smoke_mac_agent_bench.yaml"
 
 
 def _run_dirs(results_root: Path) -> list[Path]:
@@ -80,6 +82,30 @@ def test_osworld_smoke_does_not_fall_back_to_dummy(
     assert result.exit_code == 1, result.output
     assert "dummy" in result.output.lower()
     assert "qcow2" in result.output or "checkout" in result.output or "OSWorld" in result.output
+    assert not _run_dirs(tmp_path / "results")
+
+
+def test_scienceboard_smoke_does_not_fall_back_to_dummy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["run", "-c", str(SCIENCEBOARD_YAML)], catch_exceptions=False)
+    assert result.exit_code == 1, result.output
+    assert "dummy" in result.output.lower()
+    assert "ScienceBoard" in result.output or "VM.zip" in result.output or "checkout" in result.output
+    assert not _run_dirs(tmp_path / "results")
+
+
+def test_mac_agent_bench_smoke_does_not_fall_back_to_dummy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["run", "-c", str(MAC_YAML)], catch_exceptions=False)
+    assert result.exit_code == 1, result.output
+    assert "dummy" in result.output.lower()
+    assert "MacAgentBench" in result.output or "Fleet" in result.output or "checkout" in result.output
     assert not _run_dirs(tmp_path / "results")
 
 
