@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: uv sync
+      - name: Lint
+        run: uv run ruff check .
+      - name: Typecheck
+        run: uv run mypy src
+      - name: Test
+        run: uv run pytest
+        env:
+          # 默认 CI 不得拉 VM 镜像、不得下载 qcow2 / VM.zip / HDD，不需要模型密钥
+          CUA_EVAL_OSWORLD: "0"
+          CUA_EVAL_SCIENCEBOARD: "0"
+          CUA_EVAL_MAC_AGENT_BENCH: "0"

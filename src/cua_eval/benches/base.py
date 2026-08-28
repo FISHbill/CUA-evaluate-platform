@@ -1,0 +1,70 @@
+"""Bench adapter 协议与原始结果。"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
+
+from cua_eval.errors import UnsupportedBenchError
+from cua_eval.harness.base import Harness
+from cua_eval.schema import Experiment, FailureClass, TrialResult
+
+
+@dataclass
+class RawResult:
+    """一次 trial 的原始结果。adapter 的 `normalize` 把它收成 `TrialResult`。"""
+
+    task_id: str
+    steps: int
+    wall_time_seconds: float
+    terminated: bool
+    terminate_status: str | None
+    evaluator_score: float | None
+    failure_class: FailureClass
+    error_message: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    raw_artifacts: dict[str, str] | None = None
+
+
+@runtime_checkable
+class BenchAdapter(Protocol):
+    id: str
+
+    def prepare(self) -> None: ...
+
+    def list_tasks(self) -> list[str]: ...
+
+    def run_trial(self, task_id: str, agent: Harness) -> RawResult: ...
+
+    def normalize(self, raw: RawResult) -> TrialResult: ...
+
+    def cleanup(self) -> None: ...
+
+
+def get_bench(experiment: Experiment) -> BenchAdapter:
+    from cua_eval.benches.fake import FakeBench
+    from cua_eval.benches.mac_agent_bench import MacAgentBench
+    from cua_eval.benches.macos import MacOSBench
+    from cua_eval.benches.osworld import OSWorldBench
+    from cua_eval.benches.scienceboard import ScienceBoardBench
+    from cua_eval.benches.windows import WindowsBench
+    from cua_eval.schema import BenchId
+
+    match experiment.bench:
+        case BenchId.FAKE:
+            return FakeBench(experiment)
+        case BenchId.OSWORLD_VERIFIED:
+            return OSWorldBench(experiment)
+        case BenchId.SCIENCEBOARD:
+            return ScienceBoardBench(experiment)
+        case BenchId.MAC_AGENT_BENCH:
+            return MacAgentBench(experiment)
+        case BenchId.MACOS:
+            return MacOSBench()
+        case BenchId.WINDOWS:
+            return WindowsBench()
+        case _:
+            raise UnsupportedBenchError(
+                f"未知 bench {experiment.bench.value}；不要在 Linux 上假跑未接入的客户机。"
+            )

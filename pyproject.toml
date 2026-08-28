@@ -9,10 +9,13 @@ dependencies = [
   "pydantic>=2.12,<3",
   "typer>=0.12",
   "pyyaml>=6.0",
+  "deepseek-harness-sdk==0.1.0rc7",
+  "pillow>=12.3.0",
 ]
 
 [project.scripts]
 cua-eval = "cua_eval.cli:app"
+cua-eval-desktop-mcp = "cua_eval.harness.desktop_mcp:main"
 
 [dependency-groups]
 dev = [
@@ -53,9 +56,15 @@ strict = true
 plugins = ["pydantic.mypy"]
 files = ["src"]
 
+[[tool.mypy.overrides]]
+module = ["PIL", "PIL.*", "deepseek_harness", "deepseek_harness.*", "deepseek_harness_runtime", "deepseek_harness_runtime.*", "desktop_env", "desktop_env.*", "sci", "sci.*", "controllers", "controllers.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
 markers = [
   "osworld: 需要真实 OSWorld 环境，默认 skip，除非 CUA_EVAL_OSWORLD=1",
+  "scienceboard: 需要真实 ScienceBoard VM，默认 skip，除非 CUA_EVAL_SCIENCEBOARD=1",
+  "mac_agent_bench: 需要远程 macOS 沙箱，默认 skip，除非 CUA_EVAL_MAC_AGENT_BENCH=1",
 ]

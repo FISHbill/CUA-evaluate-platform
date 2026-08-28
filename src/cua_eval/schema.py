@@ -70,6 +70,8 @@ class HarnessId(StrEnum):
 class BenchId(StrEnum):
     FAKE = "fake"
     OSWORLD_VERIFIED = "osworld_verified"
+    SCIENCEBOARD = "scienceboard"
+    MAC_AGENT_BENCH = "mac_agent_bench"
     MACOS = "macos"
     WINDOWS = "windows"
 
@@ -134,7 +136,7 @@ class Limits(_Base):
     """运行限制。
 
     `max_screenshot_history` 是配置项而不是写死的 20：一张 1920×1080 截图对
-    Qwen2.5-VL 约 2,700 视觉 token，20 张约 54K，自托管时很容易超过推理服务的
+    常见 7B VLM 约 2,700 视觉 token，20 张约 54K，自托管时很容易超过推理服务的
     `--max-model-len`。见 AGENTS.md 6.4。
     """
 
@@ -351,17 +353,30 @@ class Experiment(_Base):
 
     @model_validator(mode="after")
     def _check_bench_pin(self) -> Self:
-        if self.bench is BenchId.OSWORLD_VERIFIED:
-            if self.bench_version is None:
-                raise ValueError(
-                    "bench=osworld_verified 必须 pin bench_version（官方仓库 commit），"
-                    f"不要浮动 main；下限见 AGENTS.md 第 7 节（>= {OSWORLD_MIN_COMMIT}）。"
-                )
-            if not _HEX_RE.match(self.bench_version):
-                raise ValueError(
-                    f"bench_version 应是 7–40 位小写十六进制 commit sha，得到 "
-                    f"{self.bench_version!r}"
-                )
+        pinned = {
+            BenchId.OSWORLD_VERIFIED: (
+                "bench=osworld_verified 必须 pin bench_version（官方仓库 commit），"
+                f"不要浮动 main；下限见 AGENTS.md 第 7 节（>= {OSWORLD_MIN_COMMIT}）。"
+            ),
+            BenchId.SCIENCEBOARD: (
+                "bench=scienceboard 必须 pin bench_version（官方 ScienceBoard 仓库 commit），"
+                "不要浮动 main。"
+            ),
+            BenchId.MAC_AGENT_BENCH: (
+                "bench=mac_agent_bench 必须 pin bench_version（官方 MacAgentBench 仓库 commit），"
+                "不要浮动 main。"
+            ),
+        }
+        message = pinned.get(self.bench)
+        if message is None:
+            return self
+        if self.bench_version is None:
+            raise ValueError(message)
+        if not _HEX_RE.match(self.bench_version):
+            raise ValueError(
+                f"bench_version 应是 7–40 位小写十六进制 commit sha，得到 "
+                f"{self.bench_version!r}"
+            )
         return self
 
     def evaluation_key(self) -> EvaluationKey:
@@ -390,9 +405,33 @@ class Experiment(_Base):
         if not isinstance(raw, dict):
             raise ConfigError(f"{p} 的顶层必须是映射，得到 {type(raw).__name__}")
         try:
-            return cls.model_validate(raw)
+            experiment = cls.model_validate(raw)
         except ValueError as exc:
             raise ConfigError(f"实验配置 {p} 不合法:\n{exc}") from exc
+        return experiment._resolve_relative_paths(p)
+
+    def _resolve_relative_paths(self, yaml_path: Path) -> Experiment:
+        """相对路径相对 YAML 所在仓库解析，避免 `chdir` 后找不到 cordis。"""
+        cordis = self.agent.cordis_config
+        if cordis is None:
+            return self
+        resolved = _resolve_repo_path(yaml_path, cordis)
+        if resolved == cordis:
+            return self
+        return self.model_copy(
+            update={"agent": self.agent.model_copy(update={"cordis_config": resolved})}
+        )
+
+
+def _resolve_repo_path(yaml_path: Path, relative: Path) -> Path:
+    if relative.is_absolute():
+        return relative
+    search_roots = [Path.cwd(), yaml_path.resolve().parent, *yaml_path.resolve().parents]
+    for root in search_roots:
+        candidate = root / relative
+        if candidate.is_file():
+            return candidate.resolve()
+    return relative
 
 
 class RunRecord(_Base):

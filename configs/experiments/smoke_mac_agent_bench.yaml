@@ -1,0 +1,40 @@
+# MacAgentBench 单题冒烟：Clock App 设闹钟。与 OSWorld / ScienceBoard 分列记录。
+#
+# 通用 `macos` bench 仍是 UnsupportedBenchError；本文件用独立 id `mac_agent_bench`。
+# 远程 macOS 沙箱的控制面 / 池 id / SSH 只从环境变量读，不要写进 git：
+#   CUA_EVAL_MAC_FLEET_URL / CUA_EVAL_MAC_POOL / CUA_EVAL_MAC_VM_UUID
+#   CUA_EVAL_MAC_SSH_HOST / CUA_EVAL_MAC_SSH_PORT / CUA_EVAL_MAC_SSH_USER
+#   CUA_EVAL_MAC_SSH_KEY 或 CUA_EVAL_MAC_SSH_PASSWORD_ENV（环境变量名）
+# 无沙箱、无 checkout 时 doctor / run 失败，不退化成 dummy，也不拉 HDD 镜像。
+name: smoke_mac_agent_bench
+bench: mac_agent_bench
+# 官方仓库 https://github.com/JetAstra/MacAgentBench 的 commit pin。不要浮动 main。
+bench_version: 65632d1479bfb3aa1d2d3e292628f94d1743808f
+task_ids:
+  # Clock App：设 6:30AM 工作日闹钟 Morning run / Waves，再关掉。evaluator=clock_list_alarms。
+  - clock/1_1
+compute_backend: local_linux
+artifact_retention_days: 14
+
+agent:
+  harness: deepseek_harness
+  harness_version: 0.1.0rc7
+  # 复用 OSWorld 那份自备 cordis：不挂宿主机 bash，截图走 attachment，键鼠走本仓库 MCP。
+  cordis_config: configs/dsh/osworld.cordis.yml
+  model:
+    backend: openai_compat
+    name: openai-compat-vlm
+    endpoint_kind: api
+    provider_route: vlm-cloud
+    api_key_env: CUA_EVAL_MODEL_API_KEY
+    input_modalities: [text, image]
+  protocol:
+    observation: screenshot
+    guest_actions: mouse_keyboard
+    guest_shell: true
+    harness_shell: false
+  limits:
+    max_steps: 50
+    num_envs: 1
+    task_timeout_seconds: 1800
+    max_screenshot_history: 20

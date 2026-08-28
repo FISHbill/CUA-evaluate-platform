@@ -23,8 +23,10 @@ agent:
   cordis_config: configs/dsh/osworld.cordis.yml
   model:
     backend: openai_compat
-    # 首轮选定的模型。换厂商只改这里和 cordis.yml 的 route，不改代码。
-    name: Qwen2.5-VL-7B-Instruct
+    # 阶段 1 走外部 OpenAI 兼容 API。型号按实际端点填写，不锁定某一代号
+    #（原候选 Qwen2.5 视觉系列目前无法经 API 直连，可能改为 Qwen 3 视觉系列）。
+    # 换型号只改本字段与 cordis.yml 的 route，不改代码。
+    name: openai-compat-vlm
     # api = 云端模型 API；换成本地 vLLM / 集群网关时改成 local。
     endpoint_kind: api
     # cordis.yml 里的 route 名。端点地址（baseURL）写在那份文件里。
@@ -44,7 +46,7 @@ agent:
     max_steps: 50
     num_envs: 1
     task_timeout_seconds: 1800
-    # 一张 1920×1080 截图对 Qwen2.5-VL 约 2,700 视觉 token，20 张约 54K。128K 上下文
+    # 一张 1920×1080 截图对常见 7B VLM 约 2,700 视觉 token，20 张约 54K。128K 上下文
     # 放得下，但自托管时 vLLM 的 --max-model-len 常被显存压到 32K（约只够 9 张）。
     # 拿到端点后按其实际容量调这个值，见 AGENTS.md 6.4。
     max_screenshot_history: 20

@@ -8,7 +8,7 @@
 
 ## 1. 里程碑总览
 
-进度：**M0 已完成**（`uv sync` / `cua-eval --help` / `ruff` / `mypy` / `pytest` 全绿，两份实验 YAML 通过校验）。下一步是 M1。
+进度：**M0–M5 已完成（M5 只写 adapter，不真跑）**。下一步是 **M6**（换执行机做真实单题推理验证）。另有 **ScienceBoard / MacAgentBench** adapter（与 OSWorld 分列；缺资源时 doctor 失败，不真跑）。
 
 | 里程碑 | 内容 | 执行机 |
 | --- | --- | --- |
@@ -199,18 +199,27 @@ M2 与 M4 在 M1 之后可以并行；M3 的测试随 M0–M2 增量补，不要
 
 - **判据**：标 `@pytest.mark.osworld`，默认 skip，`CUA_EVAL_OSWORLD=1` 时才尝试真跑。
 
+### T5.5 ScienceBoard / MacAgentBench adapter（与 OSWorld 分列）
+
+- **交付物**：`benches/scienceboard.py`、`benches/mac_agent_bench.py`、`benches/lucwei_mac.py`，以及 `configs/experiments/smoke_scienceboard.yaml` / `smoke_mac_agent_bench.yaml`。
+- **判据**：
+  - 两者都强制 pin 官方仓库 commit；adapter 只包装官方 evaluator（ScienceBoard: `task.eval()`，禁止 `Tester()`；MacAgentBench: `MacOSEnv.evaluate_task()`）。
+  - 禁止下载 `VM.zip` / Mac HDD；缺 checkout / 缺盘 / 缺 Fleet 环境变量时 `prepare` / `doctor` 失败，不退化成 dummy。
+  - Mac 路径**不**要求本机 `/dev/kvm` / qcow2；通用 `macos` bench 仍 raise `UnsupportedBenchError`。
+  - 结果与 OSWorld **分列**。`@pytest.mark.scienceboard` / `@pytest.mark.mac_agent_bench` 默认 skip。
+
 ---
 
 ## 8. M6 — 真实单题验证（换机）
 
-首轮配置（已确认）：`model.name=Qwen2.5-VL-7B-Instruct`、`observation=screenshot`、`guest_actions=mouse_keyboard`、`guest_shell=true`、`harness_shell=false`。
+首轮配置（已确认）：`observation=screenshot`、`guest_actions=mouse_keyboard`、`guest_shell=true`、`harness_shell=false`。`model.name` **不锁定**——阶段 1 走外部 OpenAI 兼容 API，按实际端点填写；原候选 Qwen2.5 视觉系列可能改为 Qwen 3 视觉系列。
 
 **前置条件**（任一不满足就不要开始）：
 
 | 条件 | 要求 |
 | --- | --- |
 | 执行机 | 8 vCPU、32 GB RAM、`/dev/kvm` 当前用户可读、≥ 150 GB 可用盘、Docker 可用 |
-| 模型端点 | `Qwen2.5-VL-7B-Instruct` 的 OpenAI 兼容端点 + 密钥，由使用方在环境搭好后提供 |
+| 模型端点 | 任意 OpenAI 兼容视觉模型端点 + 密钥，由使用方在环境搭好后提供；型号写在 YAML 里 |
 | 密钥 | 通过环境变量提供，不进 git / YAML / 桌面 VM |
 | 上下文容量 | 自托管时 vLLM 的 `--max-model-len` 必须够放「截图历史深度 × 约 2,700 token」，见 AGENTS.md 6.4 |
 
@@ -277,6 +286,7 @@ M2 与 M4 在 M1 之后可以并行；M3 的测试随 M0–M2 增量补，不要
 - [ ] `shell` 工具在 `guest_shell=false` 时完全不注册
 - [ ] mock 端点冒烟证明图片真的进了模型请求
 - [ ] OSWorld adapter pin ≥ `091f5ef`，`@pytest.mark.osworld` 默认 skip
+- [ ] ScienceBoard / MacAgentBench adapter 能过 schema 与无网 pytest；缺资源时 doctor 失败且不退化 dummy；通用 macos 仍 unsupported
 - [ ] 换机后 `doctor` 全绿，且已核对端点 `max_model_len` 与截图历史深度
 - [ ] 接图连通性测试通过（确认模型真收到图）
 - [ ] guest shell 落点验证通过（命令确实在桌面 VM 内执行）

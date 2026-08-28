@@ -283,7 +283,7 @@ OSWorld 2.0 放在其后：任务太长，没有并发池会把迭代速度打�
 | 第一期范围 | Cursor VM 做阶段 0（fake+dummy）；真实推理验证 = OSWorld **1 题** + 多模态模型 + DeepSeek Harness |
 | 协议 | 四开关；首轮 `observation=screenshot` + `guest_shell=true`；dsh 宿主 bash 保持关闭 |
 | 用户界面 | 仅 CLI |
-| 模型 | dummy 仅平台自测；真实验证走 OpenAI 兼容端点，接口厂商中立，`api` / `local` 两类 route；首轮 `Qwen2.5-VL-7B-Instruct` |
+| 模型 | dummy 仅平台自测；真实验证走 OpenAI 兼容端点，接口厂商中立，`api` / `local` 两类 route；型号由 YAML 填写，不锁定 |
 | 计算后端 | 实现 `local_linux`；预留 `windows_pc` / `cloud_single` / `small_cluster` / `gpu_cluster` |
 | 存储 | 本地目录，无数据库；`artifact_retention_days` 默认 14 |
 | 指标 | 阶段 1 只记 OSWorld `success_rate`；逐题 0.0–1.0，聚合用百分数 |
