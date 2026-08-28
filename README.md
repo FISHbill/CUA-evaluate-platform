@@ -48,3 +48,4 @@ uv run cua-eval doctor -c configs/experiments/smoke_mac_agent_bench.yaml
 - [docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md) — 执行计划：里程碑、任务判据、验收清单
 - [docs/PLAN.md](docs/PLAN.md) — 架构与分期
 - [docs/RESOURCES.md](docs/RESOURCES.md) — 计算 / 存储 / 网络
+- [docs/JUMPHOST_AND_PROGRESS.md](docs/JUMPHOST_AND_PROGRESS.md) — 跳板机已有资源、待配置项、当前开发进度
