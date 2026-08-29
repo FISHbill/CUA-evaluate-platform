@@ -127,6 +127,7 @@ class LucweiMacGuest:
     ssh_port: int = 22
     ssh_user: str = ""
     ssh_key: str = ""
+    ssh_password: str = field(default="", repr=False)
     native_width: int = 1920
     native_height: int = 1080
     http_getter: Any = field(default=http_get, repr=False)
@@ -150,6 +151,7 @@ class LucweiMacGuest:
             port = int(port_raw)
         except ValueError as exc:
             raise ConfigError(f"{SSH_PORT_ENV} 必须是整数，得到 {port_raw!r}") from exc
+        password_env = env.get(SSH_PASSWORD_ENV_NAME, "").strip()
         return cls(
             base_url=base,
             pool=pool,
@@ -158,6 +160,7 @@ class LucweiMacGuest:
             ssh_port=port,
             ssh_user=env.get(SSH_USER_ENV, "").strip(),
             ssh_key=env.get(SSH_KEY_ENV, "").strip(),
+            ssh_password=env.get(password_env, "") if password_env else "",
         )
 
     def identity(self) -> str:
@@ -232,7 +235,7 @@ class LucweiMacGuest:
         args = [
             ssh,
             "-o",
-            "BatchMode=yes",
+            "BatchMode=no" if self.ssh_password and not self.ssh_key else "BatchMode=yes",
             "-o",
             "StrictHostKeyChecking=no",
             "-o",
@@ -240,6 +243,18 @@ class LucweiMacGuest:
             "-p",
             str(self.ssh_port),
         ]
+        child_env = None
+        if self.ssh_password and not self.ssh_key:
+            sshpass = shutil.which("sshpass")
+            if sshpass is None:
+                raise InfraError(
+                    "配置了 SSH 密码但未找到 sshpass；请改用 CUA_EVAL_MAC_SSH_KEY，"
+                    "或在评测执行机安装 sshpass。"
+                )
+            args.insert(0, sshpass)
+            args.insert(1, "-e")
+            child_env = os.environ.copy()
+            child_env["SSHPASS"] = self.ssh_password
         if self.ssh_key:
             args.extend(["-i", self.ssh_key])
         args.append(f"{self.ssh_user}@{self.ssh_host}")
@@ -251,6 +266,7 @@ class LucweiMacGuest:
                 text=True,
                 timeout=timeout,
                 check=False,
+                env=child_env,
             )
         except subprocess.TimeoutExpired as exc:
             raise InfraError(f"SSH 到 Mac guest 超时: {exc}") from exc
@@ -267,6 +283,11 @@ __all__ = [
     "FLEET_URL_ENV",
     "FLEET_UUID_ENV",
     "LucweiMacGuest",
+    "SSH_HOST_ENV",
+    "SSH_KEY_ENV",
+    "SSH_PASSWORD_ENV_NAME",
+    "SSH_PORT_ENV",
+    "SSH_USER_ENV",
     "fetch_screenshot_png",
     "fleet_pool",
     "fleet_url",

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import time
 from collections.abc import Callable
@@ -28,6 +29,10 @@ from cua_eval.benches.lucwei_mac import (
     FLEET_URL_ENV,
     FLEET_UUID_ENV,
     LucweiMacGuest,
+    SSH_HOST_ENV,
+    SSH_KEY_ENV,
+    SSH_PASSWORD_ENV_NAME,
+    SSH_USER_ENV,
     fetch_screenshot_png,
     fleet_pool,
     fleet_url,
@@ -147,11 +152,45 @@ def collect_preflight(
             (
                 f"{ssh_user}@{ssh_host}"
                 if ssh_host and ssh_user
-                else "未设置 CUA_EVAL_MAC_SSH_HOST / CUA_EVAL_MAC_SSH_USER。"
+                else f"未设置 {SSH_HOST_ENV} / {SSH_USER_ENV}。"
                 "键鼠与 guest shell 经 SSH 落到 Mac 客户机，不是评测宿主机。"
             ),
         )
     )
+    ssh_client = shutil.which("ssh")
+    checks.append(
+        Prereq(
+            "mac_ssh_client",
+            ssh_client is not None,
+            ssh_client or "未找到 ssh 客户端，无法连接远程 Mac guest。",
+        )
+    )
+    key = env.get(SSH_KEY_ENV, "").strip()
+    password_env = env.get(SSH_PASSWORD_ENV_NAME, "").strip()
+    has_password = bool(password_env and env.get(password_env, "").strip())
+    if key:
+        key_path = Path(key).expanduser()
+        auth_ok = key_path.is_file()
+        auth_detail = (
+            str(key_path)
+            if auth_ok
+            else f"{SSH_KEY_ENV} 指向的文件不存在: {key_path}"
+        )
+    elif has_password:
+        sshpass = shutil.which("sshpass")
+        auth_ok = sshpass is not None
+        auth_detail = (
+            sshpass
+            if sshpass
+            else "使用密码认证需要 sshpass；建议改用 SSH key。"
+        )
+    else:
+        auth_ok = False
+        auth_detail = (
+            f"未设置 {SSH_KEY_ENV}，也没有通过 {SSH_PASSWORD_ENV_NAME} 提供 SSH 密码。"
+            "密钥或密码只从环境读取。"
+        )
+    checks.append(Prereq("mac_ssh_auth", auth_ok, auth_detail))
     return checks
 
 
@@ -237,7 +276,7 @@ class MacAgentBench:
         return "65632d1"
 
     def prepare(self) -> None:
-        if os.environ.get("CUA_EVAL_MACAGENTBENCH_ALLOW_DOWNLOAD") == "1":
+        if self._env_map().get("CUA_EVAL_MACAGENTBENCH_ALLOW_DOWNLOAD") == "1":
             raise ConfigError(
                 "adapter 禁止自动下载 Mac HDD / Docker-OSX 镜像，即使设置了 "
                 "CUA_EVAL_MACAGENTBENCH_ALLOW_DOWNLOAD。"
@@ -271,7 +310,7 @@ class MacAgentBench:
             ) from exc
 
         extra_env = {
-            "CUA_EVAL_MCP_BACKEND": "lucwei_mac",
+            "CUA_EVAL_MCP_BACKEND": "lucwei",
             "CUA_EVAL_MACAGENTBENCH_ROOT": str(self._root),
             **{
                 key: value
@@ -279,6 +318,10 @@ class MacAgentBench:
                 if key.startswith("CUA_EVAL_MAC_")
             },
         }
+        password_env = self._env_map().get(SSH_PASSWORD_ENV_NAME, "").strip()
+        if password_env and self._env_map().get(password_env):
+            # 运行时通过环境传递，materialize_cordis 不会把密码写入 YAML。
+            extra_env[password_env] = self._env_map()[password_env]
         run_task = getattr(agent, "run_task", None)
         try:
             if callable(run_task):
@@ -294,6 +337,7 @@ class MacAgentBench:
                     or getattr(getattr(env, "task", None), "step_no", 0)
                     or 0
                 )
+                steps = max(steps, int(getattr(agent, "steps", 0) or 0))
             else:
                 steps = self._step_loop(env, agent, task_id, instruction)
             score = self._official_score(env)
@@ -318,6 +362,8 @@ class MacAgentBench:
             terminate_status="success" if failure is FailureClass.OK else "fail",
             evaluator_score=score,
             failure_class=failure,
+            input_tokens=int(getattr(agent, "input_tokens", 0) or 0),
+            output_tokens=int(getattr(agent, "output_tokens", 0) or 0),
             raw_artifacts=raw_artifacts,
         )
 

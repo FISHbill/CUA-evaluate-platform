@@ -122,8 +122,12 @@ def iter_plugins(raw: object) -> list[dict[str, Any]]:
     return [item for item in raw if isinstance(item, dict)]
 
 
-def assert_osworld_cordis_guards(raw: object) -> None:
-    """T4.3 护栏：禁挂宿主 bash/fs，必需插件都在，截图 route 声明了 image。"""
+def assert_cordis_guards(
+    raw: object,
+    *,
+    required_image_routes: tuple[str, ...] = ("vlm-cloud", "vlm-local"),
+) -> None:
+    """通用 cordis 护栏：禁挂宿主 bash/fs，且截图 route 显式声明 image。"""
     names = plugin_names(raw)
     missing = [item for item in REQUIRED_PLUGINS if item not in names]
     if missing:
@@ -140,17 +144,17 @@ def assert_osworld_cordis_guards(raw: object) -> None:
         None,
     )
     if attachment is None:
-        raise ConfigError("cordis.yml 缺少 dsh-attachment-local")
+        raise ConfigError("cordis.yml 缺少 dsh-attachment")
     raw_cfg = attachment.get("config")
     att_cfg: dict[str, Any] = raw_cfg if isinstance(raw_cfg, dict) else {}
     dimension = att_cfg.get("maxImageDimension")
     if dimension != MAX_IMAGE_DIMENSION:
         raise ConfigError(
-            f"dsh-attachment-local.maxImageDimension 必须显式为 "
+            f"dsh-attachment.maxImageDimension 必须显式为 "
             f"{MAX_IMAGE_DIMENSION}，得到 {dimension!r}"
         )
 
-    for route in ("vlm-cloud", "vlm-local"):
+    for route in required_image_routes:
         if not _route_declares_image(raw, route):
             raise ConfigError(
                 f"截图协议 route {route} 未声明 image（defaultInput 或 models[].input）。"
@@ -170,6 +174,11 @@ def assert_osworld_cordis_guards(raw: object) -> None:
         cfg: dict[str, Any] = raw_spine if isinstance(raw_spine, dict) else {}
         if cfg.get("toolBash") is not False:
             raise ConfigError("agent-spine 必须 toolBash: false，不要把宿主 bash 交给模型")
+
+
+def assert_osworld_cordis_guards(raw: object) -> None:
+    """T4.3 护栏：OSWorld 要求云端和本地截图 route 都声明 image。"""
+    assert_cordis_guards(raw)
 
 
 def _providers(raw: object) -> dict[str, Any]:
@@ -261,9 +270,19 @@ def materialize_cordis(
             "CUA_EVAL_MCP_ACTION_LOG",
             "CUA_EVAL_MCP_NATIVE_WIDTH",
             "CUA_EVAL_MCP_NATIVE_HEIGHT",
+            "CUA_EVAL_MCP_SCREENSHOT_DIR",
             "CUA_EVAL_OSWORLD_ROOT",
             "CUA_EVAL_OSWORLD_VM_IP",
             "CUA_EVAL_OSWORLD_SERVER_PORT",
+            "CUA_EVAL_MACAGENTBENCH_ROOT",
+            "CUA_EVAL_MAC_FLEET_URL",
+            "CUA_EVAL_MAC_POOL",
+            "CUA_EVAL_MAC_VM_UUID",
+            "CUA_EVAL_MAC_SSH_HOST",
+            "CUA_EVAL_MAC_SSH_PORT",
+            "CUA_EVAL_MAC_SSH_USER",
+            "CUA_EVAL_MAC_SSH_KEY",
+            "CUA_EVAL_MAC_SSH_PASSWORD_ENV",
             "PYTHONPATH",
         ):
             if key in env:
@@ -282,6 +301,7 @@ __all__ = [
     "MAX_IMAGE_DIMENSION",
     "MAX_REQUEST_IMAGE_BYTES",
     "REQUIRED_PLUGINS",
+    "assert_cordis_guards",
     "assert_osworld_cordis_guards",
     "eval_js_expr",
     "load_cordis_yaml",

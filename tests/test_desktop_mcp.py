@@ -140,6 +140,20 @@ def test_history_clips_extra_screenshots() -> None:
     assert "history full" in server.call_tool("screenshot", {})["content"][0]["text"]
 
 
+def test_screenshot_archive_is_written_when_configured(tmp_path: Path) -> None:
+    server = DesktopMcpServer(
+        Protocol(observation=Observation.SCREENSHOT),
+        FakeGuest(),
+        max_screenshot_history=1,
+        screenshot_dir=tmp_path,
+    )
+    server.call_tool("screenshot", {})
+    server.call_tool("screenshot", {})
+    files = sorted(tmp_path.glob("step-*.jpg"))
+    assert [path.name for path in files] == ["step-001.jpg", "step-002.jpg"]
+    assert all(Image.open(path).size == MODEL_SCREEN_SIZE for path in files)
+
+
 def test_to_model_jpeg_reports_native_size() -> None:
     png, native_w, native_h = FakeGuest().capture_png()
     jpeg, native, model = to_model_jpeg(png)

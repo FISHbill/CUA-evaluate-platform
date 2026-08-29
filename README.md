@@ -37,6 +37,9 @@ dummy 的分数只说明平台链路通了，**不是**模型能力。
 uv run cua-eval doctor -c configs/experiments/smoke_scienceboard.yaml
 # MacAgentBench（远程 macOS 沙箱，禁止下载 HDD；通用 macos bench 仍不支持）
 uv run cua-eval doctor -c configs/experiments/smoke_mac_agent_bench.yaml
+# MacAgentBench qwen36-35b 正式单题配置（本地 OpenAI-compatible endpoint）
+uv run cua-eval doctor -c configs/experiments/mac_agent_bench_qwen36.yaml
+uv run cua-eval run -c configs/experiments/mac_agent_bench_qwen36.yaml
 ```
 
 缺 checkout / 缺 VM 盘 / 缺 Fleet 环境变量时 `doctor` / `run` 失败，不退化成 dummy。远程 Mac 控制面只从环境变量读：`CUA_EVAL_MAC_FLEET_URL`、`CUA_EVAL_MAC_POOL`、`CUA_EVAL_MAC_VM_UUID` 以及 SSH 相关变量。ScienceBoard 盘路径：`CUA_EVAL_SCIENCEBOARD_VM_PATH` 或 `VM_PATH`。

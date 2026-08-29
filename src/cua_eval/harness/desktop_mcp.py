@@ -14,6 +14,7 @@ import json
 import os
 import sys
 from io import BytesIO
+from pathlib import Path
 from typing import Any, TextIO
 
 from PIL import Image
@@ -183,12 +184,14 @@ class DesktopMcpServer:
         guest: GuestDesktop,
         *,
         max_screenshot_history: int = 20,
+        screenshot_dir: Path | None = None,
     ) -> None:
         if max_screenshot_history <= 0:
             raise ConfigError("max_screenshot_history 必须为正")
         self.protocol = protocol
         self.guest = guest
         self.max_screenshot_history = max_screenshot_history
+        self.screenshot_dir = screenshot_dir
         self._tools = {spec["name"]: spec for spec in tool_specs(protocol)}
         self._native_size = MODEL_SCREEN_SIZE
         self._model_size = MODEL_SCREEN_SIZE
@@ -258,6 +261,9 @@ class DesktopMcpServer:
         self._native_size = native
         self._model_size = model
         self._screenshots_taken += 1
+        if self.screenshot_dir is not None:
+            self.screenshot_dir.mkdir(parents=True, exist_ok=True)
+            (self.screenshot_dir / f"step-{self._screenshots_taken:03d}.jpg").write_bytes(jpeg)
         if self._screenshots_sent >= self.max_screenshot_history:
             note = (
                 f"screenshot history full ({self.max_screenshot_history}); "
@@ -390,7 +396,14 @@ def main() -> None:
     protocol = protocol_from_env()
     guest = build_guest()
     max_hist = int(os.environ.get("CUA_EVAL_MCP_MAX_SCREENSHOT_HISTORY", "20"))
-    server = DesktopMcpServer(protocol, guest, max_screenshot_history=max_hist)
+    screenshot_dir_raw = os.environ.get("CUA_EVAL_MCP_SCREENSHOT_DIR", "").strip()
+    screenshot_dir = Path(screenshot_dir_raw) if screenshot_dir_raw else None
+    server = DesktopMcpServer(
+        protocol,
+        guest,
+        max_screenshot_history=max_hist,
+        screenshot_dir=screenshot_dir,
+    )
     serve_stdio(server)
 
 

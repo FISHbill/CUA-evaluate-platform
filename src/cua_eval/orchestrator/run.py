@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +40,21 @@ class TracingHarness:
         self._writer = writer
         self._experiment = experiment
         self._history: list[str] = []
+        self._input_tokens = 0
+        self._output_tokens = 0
+        self._steps = 0
+
+    @property
+    def input_tokens(self) -> int:
+        return self._input_tokens
+
+    @property
+    def output_tokens(self) -> int:
+        return self._output_tokens
+
+    @property
+    def steps(self) -> int:
+        return self._steps
 
     def act(self, observation: StepObservation) -> Completion:
         screenshot_rel: str | None = None
@@ -75,7 +92,51 @@ class TracingHarness:
         run = getattr(self._inner, "run_task", None)
         if not callable(run):
             raise ConfigError("当前 harness 不支持 run_task()；deepseek_harness 才走这条路径。")
-        return run(instruction, work_dir=work_dir, extra_env=extra_env)
+        result = run(instruction, work_dir=work_dir, extra_env=extra_env)
+        events = getattr(result, "events", [])
+        if not isinstance(events, list):
+            events = []
+        self._input_tokens = int(getattr(result, "input_tokens", 0) or 0)
+        self._output_tokens = int(getattr(result, "output_tokens", 0) or 0)
+        self._steps = sum(
+            1
+            for event in events
+            if isinstance(event, dict) and ("action" in event or "tool_call" in event)
+        )
+        for index, event in enumerate(events):
+            safe_event = json.loads(json.dumps(event, ensure_ascii=False, default=str))
+            self._writer.append_trace(
+                {"source": "deepseek_harness", "event_index": index, "event": safe_event}
+            )
+        self._copy_dsh_artifacts(Path(work_dir), result)
+        return result
+
+    def _copy_dsh_artifacts(self, work_dir: Path, result: Any) -> None:
+        session_dir = work_dir / "dsh-sessions"
+        if session_dir.is_dir():
+            shutil.copytree(
+                session_dir,
+                self._writer.task_dir / "raw" / "dsh-sessions",
+                dirs_exist_ok=True,
+            )
+        screenshot_dir = work_dir / "mcp-screenshots"
+        if screenshot_dir.is_dir():
+            shutil.copytree(
+                screenshot_dir,
+                self._writer.task_dir / "screenshots",
+                dirs_exist_ok=True,
+            )
+        metadata = {
+            "session_id": str(getattr(result, "session_id", "") or ""),
+            "finish_reason": getattr(result, "finish_reason", None),
+            "input_tokens": self._input_tokens,
+            "output_tokens": self._output_tokens,
+            "steps": self._steps,
+        }
+        (self._writer.task_dir / "raw" / "dsh-run.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
 
 def _trial_from_infra(task_id: str, exc: InfraError) -> TrialResult:

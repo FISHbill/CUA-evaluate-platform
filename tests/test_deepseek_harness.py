@@ -1,7 +1,7 @@
 """DeepSeek Harness adapter：不走逐步 act()；mock 端点证明 pi-ai route 能打到模型。
 
 0.1.0rc7 随 SDK 走的 jsonrpc-agent 快照**不含** `dsh-mcp-client` 与
-`dsh-attachment-local`。因此本文件不把「dsh 拉起 MCP → 截图进请求」当作
+`dsh-attachment`。因此本文件不把「dsh 拉起 MCP → 截图进请求」当作
 CI 必绿项——那两件事由 desktop MCP 单测与 cordis 护栏覆盖；runtime 缺插件
 由 doctor `dsh_runtime` 说清楚。
 """
@@ -113,7 +113,7 @@ def test_sdk_runtime_rejects_osworld_cordis_missing_plugins() -> None:
     check = probe_dsh_cordis(CORDIS, timeout_seconds=8.0)
     assert not check.ok
     assert "dsh-mcp-client" in check.detail
-    assert "dsh-attachment-local" in check.detail
+    assert "dsh-attachment" in check.detail
     assert "不要假装跑过" in check.detail
 
 

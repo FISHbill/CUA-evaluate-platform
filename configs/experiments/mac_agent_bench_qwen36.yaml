@@ -1,0 +1,33 @@
+# MacAgentBench 正式单题冒烟：远程 macOS 的 Clock App。
+#
+# 远程 Fleet、SSH 和本地模型端点均从环境变量提供，不要把地址、密码或 API key
+# 写入此文件。运行前先确认 MacAgentBench 已 checkout 到 pin 指定的 commit。
+name: mac_agent_bench_qwen36
+bench: mac_agent_bench
+bench_version: 65632d1479bfb3aa1d2d3e292628f94d1743808f
+task_ids:
+  - clock/1_1
+compute_backend: local_linux
+artifact_retention_days: 14
+
+agent:
+  harness: deepseek_harness
+  harness_version: 0.1.0rc7
+  cordis_config: configs/dsh/mac_agent_bench.cordis.yml
+  model:
+    backend: openai_compat
+    endpoint_kind: local
+    provider_route: vlm-local
+    name: qwen36-35b
+    api_key_env: CUA_EVAL_MODEL_API_KEY
+    input_modalities: [text, image]
+  protocol:
+    observation: screenshot
+    guest_actions: mouse_keyboard
+    guest_shell: true
+    harness_shell: false
+  limits:
+    max_steps: 50
+    num_envs: 1
+    task_timeout_seconds: 1800
+    max_screenshot_history: 20

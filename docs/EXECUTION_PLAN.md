@@ -164,7 +164,7 @@ M2 与 M4 在 M1 之后可以并行；M3 的测试随 M0–M2 增量补，不要
 
 ### T4.3 `configs/dsh/osworld.cordis.yml`
 
-- **判据**：**不挂** `dsh-bash-local` / `dsh-subprocess-local` / `dsh-fs-local`——**`guest_shell=true` 也不挂**，guest 内的 shell 由 T4.2 的 MCP 工具提供；**挂** `dsh-attachment-local`、`dsh-llm-pi-ai`、`dsh-mcp-client`；显式写出 `maxImageDimension`、`maxRequestImageBytes`；截图协议的 route 上写 `defaultInput: [text, image]`，纯文本协议的 route 不写。
+- **判据**：**不挂** `dsh-bash-local` / `dsh-subprocess-local` / `dsh-fs-local`——**`guest_shell=true` 也不挂**，guest 内的 shell 由 T4.2 的 MCP 工具提供；**挂** `dsh-attachment`、`dsh-llm-pi-ai`、`dsh-mcp-client`；显式写出 `maxImageDimension`、`maxRequestImageBytes`；截图协议的 route 上写 `defaultInput: [text, image]`，纯文本协议的 route 不写。
 - **验证**：加一个测试解析该 YAML 并断言「dsh 宿主 shell 插件一个都不在、必需插件一个都不缺、route 的 modality 声明与 `protocol.observation` 一致」。这条测试有两层作用：防止有人换回 dsh 零配置默认组合，也防止有人把「允许 bash」误实现成挂 `dsh-bash-local`。
 
 ### T4.4 `harness/deepseek.py`

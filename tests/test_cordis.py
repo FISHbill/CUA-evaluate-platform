@@ -14,13 +14,17 @@ from cua_eval.harness.cordis import (
     MAX_IMAGE_DIMENSION,
     MAX_REQUEST_IMAGE_BYTES,
     REQUIRED_PLUGINS,
+    assert_cordis_guards,
     assert_osworld_cordis_guards,
     load_cordis_yaml,
+    materialize_cordis,
     plugin_names,
 )
+from cua_eval.schema import Observation, Protocol
 
 REPO = Path(__file__).resolve().parents[1]
 CORDIS = REPO / "configs" / "dsh" / "osworld.cordis.yml"
+MAC_CORDIS = REPO / "configs" / "dsh" / "mac_agent_bench.cordis.yml"
 LOCK = REPO / "uv.lock"
 
 
@@ -32,6 +36,44 @@ def test_committed_cordis_passes_guards() -> None:
         assert required in names
     for forbidden in (*FORBIDDEN_PLUGINS, *FORBIDDEN_LLM_PLUGINS):
         assert forbidden not in names
+
+
+def test_mac_cordis_passes_local_route_guards() -> None:
+    raw = load_cordis_yaml(MAC_CORDIS, environ={})
+    assert_cordis_guards(raw, required_image_routes=("vlm-local",))
+    names = plugin_names(raw)
+    assert "@deepseek-ai/dsh-attachment" in names
+    assert "@deepseek-ai/dsh-mcp-client" in names
+
+
+def test_materialize_cordis_forwards_mac_guest_environment(tmp_path: Path) -> None:
+    dest = materialize_cordis(
+        MAC_CORDIS,
+        tmp_path / "materialized.yml",
+        protocol=Protocol(observation=Observation.SCREENSHOT, guest_shell=True),
+        max_screenshot_history=12,
+        python_exe="/opt/venv/bin/python",
+        environ={
+            "CUA_EVAL_MODEL_LOCAL_BASE_URL": "http://127.0.0.1:18036/v1",
+            "CUA_EVAL_MCP_BACKEND": "lucwei",
+            "CUA_EVAL_MAC_FLEET_URL": "http://fleet.internal",
+            "CUA_EVAL_MAC_POOL": "holdenlin-dev/01",
+            "CUA_EVAL_MAC_VM_UUID": "vm-1",
+            "CUA_EVAL_MAC_SSH_HOST": "mac.internal",
+            "CUA_EVAL_MAC_SSH_PORT": "22",
+            "CUA_EVAL_MAC_SSH_USER": "runner",
+            "CUA_EVAL_MAC_SSH_KEY": "/keys/mac",
+            "CUA_EVAL_MCP_SCREENSHOT_DIR": str(tmp_path / "screenshots"),
+        },
+    )
+    raw = load_cordis_yaml(dest, environ={})
+    mcp = next(item for item in raw if item.get("name") == "@deepseek-ai/dsh-mcp-client")
+    config = mcp["config"]
+    assert config["command"] == "/opt/venv/bin/python"
+    assert config["args"] == ["-m", "cua_eval.harness.desktop_mcp"]
+    assert config["env"]["CUA_EVAL_MCP_BACKEND"] == "lucwei"
+    assert config["env"]["CUA_EVAL_MAC_POOL"] == "holdenlin-dev/01"
+    assert config["env"]["CUA_EVAL_MCP_SCREENSHOT_DIR"].endswith("screenshots")
 
 
 def test_image_limits_are_explicit() -> None:

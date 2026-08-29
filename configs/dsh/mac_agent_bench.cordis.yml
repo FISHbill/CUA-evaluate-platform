@@ -1,0 +1,88 @@
+# MacAgentBench 专用 dsh 插件组合。
+#
+# 这是远程 macOS guest 的配置，不复用 OSWorld 的 Linux persona。
+# Fleet、SSH、模型端点和密钥都通过环境变量注入；此文件不包含任何凭据。
+# guest shell 由本仓库的 desktop MCP 提供，禁止启用宿主机 bash/fs 插件。
+
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  config:
+    maxTokensAsSuccess: false
+
+- id: llm
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      vlm-local:
+        api: openai-completions
+        baseURL: !!js process.env.CUA_EVAL_MODEL_LOCAL_BASE_URL ?? '<unconfigured>'
+        apiKeyEnv: CUA_EVAL_MODEL_API_KEY
+        defaultInput: [text, image]
+        maxRequestImageBytes: 20971520
+        defaultContextWindow: 128000
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+          supportsStore: false
+          supportsReasoningEffort: false
+        models:
+          - id: qwen36-35b
+            input: [text, image]
+
+- id: attachments
+  name: '@deepseek-ai/dsh-attachment'
+  config:
+    maxImageDimension: 2000
+    maxMessageImageBytes: 20971520
+
+- id: agent-core
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+    maxParallelToolCalls: 1
+    persona: |
+      You are a computer-use agent controlling a remote macOS desktop.
+      Use the desktop MCP tools to complete the Clock App task.
+      Mouse coordinates are pixels on the 1920x1080 screenshot.
+      Shell, when available, runs inside the remote Mac guest, not on the
+      evaluation host. Do not assume host filesystem access or Linux commands.
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
+    compression: none
+
+- id: session-checkpoints
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+- id: desktop-mcp
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: desktop
+    transport: stdio
+    command: python
+    args: ['-m', 'cua_eval.harness.desktop_mcp']
+    failOnStartupError: true
+    reconnect:
+      enabled: false
+    env:
+      CUA_EVAL_MCP_OBSERVATION: !!js process.env.CUA_EVAL_MCP_OBSERVATION ?? 'screenshot'
+      CUA_EVAL_MCP_GUEST_ACTIONS: !!js process.env.CUA_EVAL_MCP_GUEST_ACTIONS ?? 'mouse_keyboard'
+      CUA_EVAL_MCP_GUEST_SHELL: !!js process.env.CUA_EVAL_MCP_GUEST_SHELL ?? 'true'
+      CUA_EVAL_MCP_MAX_SCREENSHOT_HISTORY: !!js process.env.CUA_EVAL_MCP_MAX_SCREENSHOT_HISTORY ?? '20'
+      CUA_EVAL_MCP_BACKEND: !!js process.env.CUA_EVAL_MCP_BACKEND ?? 'lucwei'
+      CUA_EVAL_MAC_FLEET_URL: !!js process.env.CUA_EVAL_MAC_FLEET_URL ?? ''
+      CUA_EVAL_MAC_POOL: !!js process.env.CUA_EVAL_MAC_POOL ?? ''
+      CUA_EVAL_MAC_VM_UUID: !!js process.env.CUA_EVAL_MAC_VM_UUID ?? ''
+      CUA_EVAL_MAC_SSH_HOST: !!js process.env.CUA_EVAL_MAC_SSH_HOST ?? ''
+      CUA_EVAL_MAC_SSH_PORT: !!js process.env.CUA_EVAL_MAC_SSH_PORT ?? '22'
+      CUA_EVAL_MAC_SSH_USER: !!js process.env.CUA_EVAL_MAC_SSH_USER ?? ''
+      CUA_EVAL_MAC_SSH_KEY: !!js process.env.CUA_EVAL_MAC_SSH_KEY ?? ''
+      CUA_EVAL_MAC_SSH_PASSWORD_ENV: !!js process.env.CUA_EVAL_MAC_SSH_PASSWORD_ENV ?? ''

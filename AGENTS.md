@@ -297,7 +297,7 @@ prerelease = "if-necessary"
 本仓库自备 `configs/dsh/osworld.cordis.yml`，纳入版本控制，与 dsh 版本一起 pin。相对默认组合必须做三件事：
 
 1. **不挂** `dsh-bash-local`、`dsh-subprocess-local`、`dsh-fs-local`。**即使 `guest_shell=true` 也不挂**——guest 内的 shell 由本仓库 MCP server 的 `shell` 工具提供，不是由 dsh 的宿主 bash 提供。
-2. **补挂** `dsh-attachment-local`。默认组合没有它，缺了截图进不了会话。
+2. **补挂** `dsh-attachment`。默认组合没有它，缺了截图进不了会话。
 3. **挂** `dsh-llm-pi-ai` 声明模型 route（见 6.3），替换默认的 `dsh-llm-deepseek`。
 
 上游**没有** computer-use 插件（已核实：仓库 9060 条路径中无任何 screenshot / 键鼠相关包），键鼠与截图工具必须自己提供。实现方式：本仓库写一个 Python MCP server 暴露第 4 节的中立动作，通过 dsh 的 `@deepseek-ai/dsh-mcp-client` 插件以 stdio 挂进 cordis.yml。这样键鼠代码留在本仓库，不必往 dsh 里写 TypeScript，且工具返回的图片是 dsh 官方支持的路径。

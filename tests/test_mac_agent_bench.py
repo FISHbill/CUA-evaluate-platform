@@ -26,6 +26,7 @@ from cua_eval.schema import BenchId, Experiment, FailureClass
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs" / "experiments"
 MAC_YAML = CONFIG_DIR / "smoke_mac_agent_bench.yaml"
+MAC_QWEN_YAML = CONFIG_DIR / "mac_agent_bench_qwen36.yaml"
 SMOKE_TASK = "clock/1_1"
 
 
@@ -136,6 +137,15 @@ def test_get_bench_passes_experiment() -> None:
     assert bench.id == "mac_agent_bench"
     assert experiment.bench is BenchId.MAC_AGENT_BENCH
     assert experiment.task_ids == [SMOKE_TASK]
+
+
+def test_qwen36_experiment_uses_mac_specific_local_configuration() -> None:
+    experiment = Experiment.from_yaml(MAC_QWEN_YAML)
+    assert experiment.agent.model.name == "qwen36-35b"
+    assert experiment.agent.model.provider_route == "vlm-local"
+    assert experiment.agent.model.endpoint_kind.value == "local"
+    assert experiment.agent.cordis_config is not None
+    assert experiment.agent.cordis_config.name == "mac_agent_bench.cordis.yml"
 
 
 def test_prepare_fails_without_checkout_and_does_not_download(
@@ -252,7 +262,7 @@ def test_run_task_path_sets_lucwei_guest_env(tmp_path: Path) -> None:
     harness = _RecordingHarness()
     raw = bench.run_trial(SMOKE_TASK, harness)  # type: ignore[arg-type]
     assert harness.extra_env is not None
-    assert harness.extra_env["CUA_EVAL_MCP_BACKEND"] == "lucwei_mac"
+    assert harness.extra_env["CUA_EVAL_MCP_BACKEND"] == "lucwei"
     assert harness.extra_env["CUA_EVAL_MAC_POOL"] == "unit-pool"
     assert raw.evaluator_score == 1.0
 
@@ -301,3 +311,17 @@ def test_build_guest_lucwei_from_env() -> None:
     )
     assert isinstance(guest, LucweiMacGuest)
     assert screenshot_url(guest.base_url, guest.vm_uuid).endswith("/screenshot")
+
+
+def test_build_guest_accepts_mac_backend_alias() -> None:
+    guest = build_guest(
+        {
+            "CUA_EVAL_MCP_BACKEND": "lucwei",
+            "CUA_EVAL_MAC_FLEET_URL": "http://127.0.0.1:9",
+            "CUA_EVAL_MAC_POOL": "unit-pool",
+            "CUA_EVAL_MAC_VM_UUID": "abc",
+            "CUA_EVAL_MAC_SSH_HOST": "127.0.0.1",
+            "CUA_EVAL_MAC_SSH_USER": "tester",
+        }
+    )
+    assert isinstance(guest, LucweiMacGuest)

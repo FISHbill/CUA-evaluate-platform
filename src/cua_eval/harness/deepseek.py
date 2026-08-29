@@ -27,6 +27,8 @@ class HarnessTaskResult:
     finish_reason: str | None
     events: list[dict[str, Any]] = field(default_factory=list)
     session_id: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class DeepSeekHarnessAdapter:
@@ -71,6 +73,7 @@ class DeepSeekHarnessAdapter:
         session_root = work_dir / "dsh-sessions"
         session_root.mkdir(parents=True, exist_ok=True)
         env["DSH_SESSION_ROOT"] = str(session_root)
+        env["CUA_EVAL_MCP_SCREENSHOT_DIR"] = str(work_dir / "mcp-screenshots")
         cordis_raw = self.spec.cordis_config
         if cordis_raw is None:
             raise ConfigError("harness=deepseek_harness 必须提供 cordis_config")
@@ -108,11 +111,23 @@ class DeepSeekHarnessAdapter:
         except Exception as exc:
             raise HarnessError(f"deepseek_harness 运行失败: {exc}") from exc
         events = [dict(event) for event in result.events]
+        input_tokens = sum(
+            int(event.get("input_tokens") or 0)
+            for event in events
+            if isinstance(event.get("input_tokens"), int | float)
+        )
+        output_tokens = sum(
+            int(event.get("output_tokens") or 0)
+            for event in events
+            if isinstance(event.get("output_tokens"), int | float)
+        )
         return HarnessTaskResult(
             final_response=result.final_response,
             finish_reason=result.finish_reason,
             events=events,
             session_id=result.session_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
 

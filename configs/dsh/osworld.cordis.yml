@@ -59,7 +59,7 @@
           - id: openai-compat-text
 
 - id: attachments
-  name: '@deepseek-ai/dsh-attachment-local'
+  name: '@deepseek-ai/dsh-attachment'
   config:
     maxImageDimension: 2000
     maxMessageImageBytes: 20971520
