@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import os
+import selectors
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from cua_eval.errors import ConfigError
@@ -239,6 +242,10 @@ def probe_openai_compat(base_url: str, timeout_seconds: float = 2.0) -> CheckRes
             if 200 <= int(status) < 500:
                 return CheckResult(name="endpoint", ok=True, detail=f"{url} HTTP {status}")
             return CheckResult(name="endpoint", ok=False, detail=f"{url} HTTP {status}")
+    except HTTPError as exc:
+        if 400 <= int(exc.code) < 500:
+            return CheckResult(name="endpoint", ok=True, detail=f"{url} HTTP {exc.code} (auth required)")
+        return CheckResult(name="endpoint", ok=False, detail=f"endpoint HTTP {exc.code}: {exc}")
     except (URLError, TimeoutError, OSError) as exc:
         return CheckResult(
             name="endpoint",
@@ -261,16 +268,77 @@ def _jsonrpc_initialize(
     environ: Mapping[str, str],
     timeout_seconds: float,
 ) -> subprocess.CompletedProcess[str]:
+    """Probe readiness without waiting for the resident dsh process to exit.
+
+    ``dsh-jsonrpc-agent`` is a long-lived server.  ``subprocess.run`` waits for
+    process termination, so it reports a false timeout after dsh has already
+    answered the initialize request.  Read the first stdout line instead, then
+    terminate this probe process and its MCP children.
+    """
     env = dict(environ)
     env["DSH_CORDIS_CONFIG"] = str(cordis_path)
-    return subprocess.run(
-        [str(binary)],
-        input=_DSH_INIT_PAYLOAD,
-        capture_output=True,
+    args = [str(binary)]
+    proc = subprocess.Popen(
+        args,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout_seconds,
         env=env,
-        check=False,
+        start_new_session=(os.name == "posix"),
+    )
+    selector = selectors.DefaultSelector()
+    stdout_parts: list[str] = []
+    try:
+        assert proc.stdin is not None
+        try:
+            proc.stdin.write(_DSH_INIT_PAYLOAD)
+            proc.stdin.flush()
+        except BrokenPipeError:
+            pass
+
+        assert proc.stdout is not None
+        selector.register(proc.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(args, timeout_seconds, output="".join(stdout_parts))
+            if not selector.select(remaining):
+                raise subprocess.TimeoutExpired(args, timeout_seconds, output="".join(stdout_parts))
+            line = proc.stdout.readline()
+            if line == "":
+                break
+            stdout_parts.append(line)
+            if line.strip():
+                break
+    finally:
+        selector.close()
+        if proc.poll() is None:
+            if os.name == "posix":
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            else:
+                proc.terminate()
+        try:
+            remaining_stdout, stderr = proc.communicate(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                proc.kill()
+            remaining_stdout, stderr = proc.communicate()
+
+    return subprocess.CompletedProcess(
+        args,
+        proc.returncode,
+        "".join(stdout_parts) + (remaining_stdout or ""),
+        stderr or "",
     )
 
 
@@ -324,7 +392,7 @@ def probe_dsh_cordis(
     cordis_path: Path,
     *,
     environ: Mapping[str, str] | None = None,
-    timeout_seconds: float = 6.0,
+    timeout_seconds: float = 45.0,
 ) -> CheckResult:
     """jsonrpc-agent 能否加载这份 cordis。缺 mcp-client / attachment 时必须说清楚。"""
     try:

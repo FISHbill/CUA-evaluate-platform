@@ -21,7 +21,7 @@ from cua_eval.schema import Protocol
 
 REQUIRED_PLUGINS = (
     "@deepseek-ai/dsh-sdk-jsonrpc-server",
-    "@deepseek-ai/dsh-attachment-local",
+    "@deepseek-ai/dsh-attachment",
     "@deepseek-ai/dsh-llm-pi-ai",
     "@deepseek-ai/dsh-mcp-client",
 )
@@ -136,7 +136,7 @@ def assert_osworld_cordis_guards(raw: object) -> None:
             + "。guest_shell=true 也不许挂 dsh-bash-local；shell 由 desktop MCP 提供。"
         )
     attachment = next(
-        (p for p in iter_plugins(raw) if p.get("name") == "@deepseek-ai/dsh-attachment-local"),
+        (p for p in iter_plugins(raw) if p.get("name") == "@deepseek-ai/dsh-attachment"),
         None,
     )
     if attachment is None:

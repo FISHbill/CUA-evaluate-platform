@@ -324,10 +324,11 @@ def _rpc_error(msg_id: object, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
 
 
-def _read_message(stream: TextIO) -> dict[str, Any] | None:
+def _read_message(stream: TextIO) -> tuple[dict[str, Any] | None, str]:
+    """Return (message, framing) where framing is lsp or ndjson."""
     line = stream.readline()
     if line == "":
-        return None
+        return None, "ndjson"
     if line.lower().startswith("content-length:"):
         length = int(line.split(":", 1)[1].strip())
         while True:
@@ -336,12 +337,31 @@ def _read_message(stream: TextIO) -> dict[str, Any] | None:
                 break
         body = stream.read(length)
         parsed = json.loads(body)
-        return parsed if isinstance(parsed, dict) else None
+        msg = parsed if isinstance(parsed, dict) else None
+        return msg, "lsp"
     stripped = line.strip()
     if not stripped:
         return _read_message(stream)
     parsed = json.loads(stripped)
-    return parsed if isinstance(parsed, dict) else None
+    msg = parsed if isinstance(parsed, dict) else None
+    return msg, "ndjson"
+
+
+def _write_message(stream: TextIO, obj: dict[str, Any], framing: str) -> None:
+    payload = json.dumps(obj, ensure_ascii=False)
+    if framing == "lsp":
+        data = payload.encode("utf-8")
+        header = ("Content-Length: %d" % len(data) + chr(13) + chr(10) + chr(13) + chr(10)).encode("ascii")
+        buf = getattr(stream, "buffer", None)
+        if buf is not None:
+            buf.write(header + data)
+            buf.flush()
+        else:
+            stream.write(header.decode("ascii") + payload)
+            stream.flush()
+        return
+    stream.write(payload + chr(10))
+    stream.flush()
 
 
 def serve_stdio(
@@ -353,20 +373,18 @@ def serve_stdio(
     incoming = stdin if stdin is not None else sys.stdin
     outgoing = stdout if stdout is not None else sys.stdout
     while True:
+        framing = "ndjson"
         try:
-            message = _read_message(incoming)
+            message, framing = _read_message(incoming)
         except json.JSONDecodeError as exc:
-            outgoing.write(json.dumps(_rpc_error(None, -32700, f"parse error: {exc}")) + "\n")
-            outgoing.flush()
+            _write_message(outgoing, _rpc_error(None, -32700, f"parse error: {exc}"), framing)
             continue
         if message is None:
             return
         reply = server.handle(message)
         if reply is None:
             continue
-        outgoing.write(json.dumps(reply, ensure_ascii=False) + "\n")
-        outgoing.flush()
-
+        _write_message(outgoing, reply, framing)
 
 def main() -> None:
     protocol = protocol_from_env()
