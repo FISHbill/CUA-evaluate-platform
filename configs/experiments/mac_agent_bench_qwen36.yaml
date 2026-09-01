@@ -12,7 +12,7 @@ artifact_retention_days: 14
 
 agent:
   harness: deepseek_harness
-  harness_version: 0.1.0rc7
+  harness_version: 0.1.1rc1
   cordis_config: configs/dsh/mac_agent_bench.cordis.yml
   model:
     backend: openai_compat

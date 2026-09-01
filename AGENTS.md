@@ -281,14 +281,14 @@ requires-python >=3.10   依赖 pydantic>=2.12,<3
 
 adapter 直接用 `from deepseek_harness import DeepSeekHarness`，不要自己拼 Node CLI。
 
-**版本 pin 与预发布陷阱**：SDK 目前只有预发布版（如 `0.1.0rc7`）。`uv` 若用 `--prerelease=allow`，pydantic 会被一起拉成 beta（实测 `2.14.0b1`），这会污染整个平台的 schema 层。pyproject 里必须写：
+**版本 pin 与预发布陷阱**：SDK 目前只有预发布版（如 `0.1.1rc1`）。`uv` 若用 `--prerelease=allow`，pydantic 会被一起拉成 beta（实测 `2.14.0b1`），这会污染整个平台的 schema 层。pyproject 里必须写：
 
 ```toml
 [tool.uv]
 prerelease = "if-necessary"
 ```
 
-只有确实没有正式版的包才走预发布，pydantic 仍解析到稳定版（实测锁定 `deepseek-harness-sdk 0.1.0rc7` + `pydantic 2.13.4`）。不要用 `if-necessary-or-explicit`——uv 已把它标为弃用。dsh 版本号 pin 进 `smoke_osworld.yaml`。
+只有确实没有正式版的包才走预发布，pydantic 仍解析到稳定版。当前锁定 `deepseek-harness-sdk 0.1.1rc1` 及其配套 runtime；不要用 `if-necessary-or-explicit`——uv 已把它标为弃用。dsh 版本号 pin 进实验 YAML。
 
 ### 6.2 自备 cordis.yml（阶段 1 的硬性前提）
 

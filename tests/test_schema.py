@@ -336,7 +336,7 @@ class TestExperiment:
             agent={
                 "model": _openai_model(),
                 "harness": HarnessId.DEEPSEEK_HARNESS,
-                "harness_version": "0.1.0rc7",
+                "harness_version": "0.1.1rc1",
                 "cordis_config": "configs/dsh/osworld.cordis.yml",
                 "protocol": {"observation": Observation.SCREENSHOT, "guest_shell": True},
             },

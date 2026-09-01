@@ -18,7 +18,7 @@ artifact_retention_days: 14
 agent:
   harness: deepseek_harness
   # dsh SDK 只有预发布版，版本必须 pin。
-  harness_version: 0.1.0rc7
+  harness_version: 0.1.1rc1
   # 禁止使用 dsh 的零配置默认组合：它会挂上宿主机 bash / 文件系统。
   cordis_config: configs/dsh/osworld.cordis.yml
   model:

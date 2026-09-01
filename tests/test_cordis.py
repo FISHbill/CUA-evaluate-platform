@@ -102,4 +102,4 @@ def test_pydantic_lock_is_stable() -> None:
     assert re.search(r"(a|b|rc)\d*$", version) is None, version
     sdk = re.search(r'^name = "deepseek-harness-sdk"\nversion = "([^"]+)"', text, re.MULTILINE)
     assert sdk is not None
-    assert sdk.group(1) == "0.1.0rc7"
+    assert sdk.group(1) == "0.1.1rc1"

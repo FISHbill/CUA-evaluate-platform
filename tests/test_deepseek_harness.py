@@ -1,9 +1,8 @@
 """DeepSeek Harness adapter：不走逐步 act()；mock 端点证明 pi-ai route 能打到模型。
 
-0.1.0rc7 随 SDK 走的 jsonrpc-agent 快照**不含** `dsh-mcp-client` 与
-`dsh-attachment`。因此本文件不把「dsh 拉起 MCP → 截图进请求」当作
-CI 必绿项——那两件事由 desktop MCP 单测与 cordis 护栏覆盖；runtime 缺插件
-由 doctor `dsh_runtime` 说清楚。
+0.1.1rc1 随 SDK 走的 jsonrpc-agent 快照包含 `dsh-mcp-client` 与
+`dsh-attachment`。因此本文件只用 mock 端点验证 adapter，runtime 的实际
+插件加载由目标 Linux 执行机上的 doctor / smoke 负责。
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ import pytest
 
 from cua_eval.errors import ConfigError
 from cua_eval.harness.base import StepObservation
+from cua_eval.harness.cordis import load_cordis_yaml, plugin_names
 from cua_eval.harness.deepseek import DeepSeekHarnessAdapter
 from cua_eval.harness.stub import build_harness
 from cua_eval.schema import (
@@ -102,19 +102,11 @@ def _runtime_compatible_cordis(path: Path, base_url: str) -> None:
     )
 
 
-def test_sdk_runtime_rejects_osworld_cordis_missing_plugins() -> None:
-    """钉住 0.1.0rc7 快照的缺口：缺插件时必须失败，不能静默落到无 MCP 的 agent。
-
-    完整 osworld cordis 一次加载会把多处 import 失败压成无名 AggregateError，
-    doctor 必须按插件单独探测并把名字写进 detail。
-    """
-    from cua_eval.doctor import probe_dsh_cordis
-
-    check = probe_dsh_cordis(CORDIS, timeout_seconds=8.0)
-    assert not check.ok
-    assert "dsh-mcp-client" in check.detail
-    assert "dsh-attachment" in check.detail
-    assert "不要假装跑过" in check.detail
+def test_osworld_cordis_uses_current_runtime_plugin_names() -> None:
+    names = plugin_names(load_cordis_yaml(CORDIS, environ={}))
+    assert "@deepseek-ai/dsh-mcp-client" in names
+    assert "@deepseek-ai/dsh-attachment" in names
+    assert "@deepseek-ai/dsh-attachment-local" not in names
 
 
 def test_adapter_mock_text_roundtrip(tmp_path: Path) -> None:
